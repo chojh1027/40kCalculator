@@ -30,6 +30,7 @@ export interface Unit {
   weaponSkill: number;
   toughness: number;
   save: number;
+  invulnerableSave?: number;
   wounds: number;
   defaultModelCount: number;
   minModelCount: number;
@@ -79,6 +80,15 @@ export const WEAPONS: Weapon[] = [
     damage: 4,
   },
   {
+    id: "storm-bolter",
+    name: "Storm Bolter",
+    type: "ranged",
+    attacks: 2,
+    strength: 4,
+    armorPenetration: 0,
+    damage: 1,
+  },
+  {
     id: "chainsword",
     name: "Chainsword",
     type: "melee",
@@ -86,6 +96,16 @@ export const WEAPONS: Weapon[] = [
     strength: 4,
     armorPenetration: -1,
     damage: 1,
+  },
+  {
+    id: "power-fist",
+    name: "Power Fist",
+    type: "melee",
+    attacks: 3,
+    strength: 8,
+    armorPenetration: -2,
+    damage: 2,
+    skillOverride: 4,
   },
   {
     id: "choppa",
@@ -140,6 +160,21 @@ export const UNITS: Unit[] = [
     minModelCount: 5,
     maxModelCount: 10,
     weaponIds: ["lascannon", "chainsword"],
+  },
+  {
+    id: "terminator-squad",
+    factionId: "space-marines",
+    name: "Terminator Squad",
+    ballisticSkill: 3,
+    weaponSkill: 3,
+    toughness: 5,
+    save: 2,
+    invulnerableSave: 4,
+    wounds: 3,
+    defaultModelCount: 5,
+    minModelCount: 5,
+    maxModelCount: 10,
+    weaponIds: ["storm-bolter", "power-fist"],
   },
   {
     id: "infantry-squad",
