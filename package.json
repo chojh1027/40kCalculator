@@ -1,0 +1,20 @@
+{
+  "name": "40k-calculator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm --workspace @40k-calculator/web run dev",
+    "build": "npm --workspace @40k-calculator/web run build",
+    "test": "npm --workspace @40k-calculator/calculator run test",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "check": "npm run typecheck && npm run test && npm run build"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  }
+}
