@@ -1,15 +1,13 @@
 import { useMemo, useState } from "react";
 import { calculateBattle, type BattleInput } from "@40k-calculator/calculator";
-
-interface WeaponPreset {
-  id: string;
-  name: string;
-  attacksPerWeapon: number;
-  skill: number;
-  strength: number;
-  armorPenetration: number;
-  damage: number;
-}
+import {
+  ALLIANCES,
+  FACTIONS,
+  UNITS,
+  WEAPONS_BY_ID,
+  type Unit,
+  type Weapon,
+} from "./data/catalog";
 
 interface TargetPreset {
   id: string;
@@ -21,33 +19,66 @@ interface TargetPreset {
   modelCount: number;
 }
 
-const WEAPONS: WeaponPreset[] = [
-  { id: "bolt-rifle", name: "Bolt Rifle", attacksPerWeapon: 2, skill: 3, strength: 4, armorPenetration: -1, damage: 1 },
-  { id: "plasma-incinerator", name: "Plasma Incinerator", attacksPerWeapon: 2, skill: 3, strength: 7, armorPenetration: -2, damage: 2 },
-  { id: "lascannon", name: "Lascannon (MVP fixed damage)", attacksPerWeapon: 1, skill: 3, strength: 12, armorPenetration: -3, damage: 4 },
-];
-
 const TARGETS: TargetPreset[] = [
   { id: "guardsman", name: "Guardsmen (10 models)", toughness: 3, save: 5, wounds: 1, modelCount: 10 },
   { id: "space-marine", name: "Space Marines (5 models)", toughness: 4, save: 3, wounds: 2, modelCount: 5 },
   { id: "terminator", name: "Terminators (5 models)", toughness: 5, save: 2, invulnerableSave: 4, wounds: 3, modelCount: 5 },
 ];
 
+const INITIAL_ALLIANCE_ID = "imperium";
+const INITIAL_FACTION_ID = "space-marines";
+const INITIAL_UNIT_ID = "intercessor-squad";
+const INITIAL_WEAPON_ID = "bolt-rifle";
+
 const percent = (value: number): string => `${(value * 100).toFixed(1)}%`;
 const decimal = (value: number): string => value.toFixed(2);
 const modelLabel = (count: number): string => `${count} model${count === 1 ? "" : "s"}`;
 
-export function App() {
-  const [weaponId, setWeaponId] = useState(WEAPONS[0].id);
-  const [targetId, setTargetId] = useState(TARGETS[1].id);
-  const [weaponCount, setWeaponCount] = useState(5);
+function getUnitWeapons(unit: Unit): Weapon[] {
+  return unit.weaponIds
+    .map((weaponId) => WEAPONS_BY_ID.get(weaponId))
+    .filter((weapon): weapon is Weapon => weapon !== undefined);
+}
 
-  const weapon = WEAPONS.find((item) => item.id === weaponId) ?? WEAPONS[0];
+export function App() {
+  const [allianceId, setAllianceId] = useState(INITIAL_ALLIANCE_ID);
+  const [factionId, setFactionId] = useState(INITIAL_FACTION_ID);
+  const [attackingUnitId, setAttackingUnitId] = useState(INITIAL_UNIT_ID);
+  const [weaponId, setWeaponId] = useState(INITIAL_WEAPON_ID);
+  const [attackingModelCount, setAttackingModelCount] = useState(5);
+  const [targetId, setTargetId] = useState(TARGETS[1].id);
+
+  const availableFactions = useMemo(
+    () => FACTIONS.filter((faction) => faction.allianceId === allianceId),
+    [allianceId],
+  );
+  const availableUnits = useMemo(
+    () => UNITS.filter((unit) => unit.factionId === factionId),
+    [factionId],
+  );
+
+  const attackingUnit =
+    availableUnits.find((unit) => unit.id === attackingUnitId) ??
+    availableUnits[0] ??
+    UNITS[0];
+  const availableWeapons = getUnitWeapons(attackingUnit);
+  const weapon =
+    availableWeapons.find((item) => item.id === weaponId) ??
+    availableWeapons[0];
   const target = TARGETS.find((item) => item.id === targetId) ?? TARGETS[0];
 
+  if (!attackingUnit || !weapon) {
+    throw new Error("The attacking unit catalog must contain at least one valid weapon.");
+  }
+
+  const skill =
+    weapon.skillOverride ??
+    (weapon.type === "ranged" ? attackingUnit.ballisticSkill : attackingUnit.weaponSkill);
+  const skillLabel = weapon.type === "ranged" ? "BS" : "WS";
+
   const input: BattleInput = {
-    attacks: weapon.attacksPerWeapon * weaponCount,
-    skill: weapon.skill,
+    attacks: weapon.attacks * attackingModelCount,
+    skill,
     strength: weapon.strength,
     armorPenetration: weapon.armorPenetration,
     damage: weapon.damage,
@@ -73,6 +104,47 @@ export function App() {
 
   const mostLikely = result.summary.mostLikelyOutcome;
 
+  const selectFirstWeaponForUnit = (unit: Unit): void => {
+    const firstWeapon = getUnitWeapons(unit)[0];
+    if (!firstWeapon) {
+      throw new Error(`${unit.name} does not reference a valid weapon.`);
+    }
+
+    setWeaponId(firstWeapon.id);
+    setAttackingModelCount(unit.defaultModelCount);
+  };
+
+  const handleAllianceChange = (nextAllianceId: string): void => {
+    const nextFaction = FACTIONS.find((faction) => faction.allianceId === nextAllianceId);
+    const nextUnit = nextFaction
+      ? UNITS.find((unit) => unit.factionId === nextFaction.id)
+      : undefined;
+
+    if (!nextFaction || !nextUnit) return;
+
+    setAllianceId(nextAllianceId);
+    setFactionId(nextFaction.id);
+    setAttackingUnitId(nextUnit.id);
+    selectFirstWeaponForUnit(nextUnit);
+  };
+
+  const handleFactionChange = (nextFactionId: string): void => {
+    const nextUnit = UNITS.find((unit) => unit.factionId === nextFactionId);
+    if (!nextUnit) return;
+
+    setFactionId(nextFactionId);
+    setAttackingUnitId(nextUnit.id);
+    selectFirstWeaponForUnit(nextUnit);
+  };
+
+  const handleUnitChange = (nextUnitId: string): void => {
+    const nextUnit = UNITS.find((unit) => unit.id === nextUnitId);
+    if (!nextUnit) return;
+
+    setAttackingUnitId(nextUnitId);
+    selectFirstWeaponForUnit(nextUnit);
+  };
+
   return (
     <main className="page-shell">
       <header className="hero">
@@ -85,11 +157,37 @@ export function App() {
 
       <section className="layout" aria-label="Combat probability calculator">
         <form className="panel controls" onSubmit={(event) => event.preventDefault()}>
-          <h2>Battle Setup</h2>
+          <h2>Attacking Unit</h2>
+          <label>
+            Alliance
+            <select value={allianceId} onChange={(event) => handleAllianceChange(event.target.value)}>
+              {ALLIANCES.map((alliance) => (
+                <option key={alliance.id} value={alliance.id}>{alliance.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Faction
+            <select value={factionId} onChange={(event) => handleFactionChange(event.target.value)}>
+              {availableFactions.map((faction) => (
+                <option key={faction.id} value={faction.id}>{faction.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Unit
+            <select value={attackingUnit.id} onChange={(event) => handleUnitChange(event.target.value)}>
+              {availableUnits.map((unit) => (
+                <option key={unit.id} value={unit.id}>{unit.name}</option>
+              ))}
+            </select>
+          </label>
           <label>
             Weapon
-            <select value={weaponId} onChange={(event) => setWeaponId(event.target.value)}>
-              {WEAPONS.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            <select value={weapon.id} onChange={(event) => setWeaponId(event.target.value)}>
+              {availableWeapons.map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
             </select>
           </label>
           <label>
@@ -97,26 +195,41 @@ export function App() {
             <input
               type="number"
               min="1"
-              max="30"
-              value={weaponCount}
-              onChange={(event) => setWeaponCount(Math.max(1, Number(event.target.value) || 1))}
+              max={attackingUnit.maxModelCount}
+              value={attackingModelCount}
+              onChange={(event) => {
+                const nextCount = Number(event.target.value) || 1;
+                setAttackingModelCount(Math.min(attackingUnit.maxModelCount, Math.max(1, nextCount)));
+              }}
             />
           </label>
-          <label>
-            Defending Unit
-            <select value={targetId} onChange={(event) => setTargetId(event.target.value)}>
-              {TARGETS.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
-          </label>
 
-          <dl className="stat-grid">
-            <div><dt>Total Attacks</dt><dd>{input.attacks}</dd></div>
-            <div><dt>Hit Roll</dt><dd>{input.skill}+</dd></div>
-            <div><dt>Strength</dt><dd>{input.strength}</dd></div>
-            <div><dt>AP</dt><dd>{input.armorPenetration}</dd></div>
-            <div><dt>Damage</dt><dd>{input.damage}</dd></div>
-            <div><dt>Target T / Sv</dt><dd>{input.targetToughness} / {input.targetSave}+</dd></div>
+          <dl className="weapon-profile" aria-label={`${weapon.name} profile`}>
+            <div><dt>Models</dt><dd>{attackingModelCount}</dd></div>
+            <div><dt>A</dt><dd>{weapon.attacks}</dd></div>
+            <div><dt>{skillLabel}</dt><dd>{skill}+</dd></div>
+            <div><dt>S</dt><dd>{weapon.strength}</dd></div>
+            <div><dt>AP</dt><dd>{weapon.armorPenetration}</dd></div>
+            <div><dt>D</dt><dd>{weapon.damage}</dd></div>
           </dl>
+
+          <div className="control-section">
+            <h2>Defending Unit</h2>
+            <label>
+              Unit
+              <select value={targetId} onChange={(event) => setTargetId(event.target.value)}>
+                {TARGETS.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label>
+
+            <dl className="stat-grid">
+              <div><dt>Toughness</dt><dd>{input.targetToughness}</dd></div>
+              <div><dt>Save</dt><dd>{input.targetSave}+</dd></div>
+              <div><dt>Wounds</dt><dd>{input.targetWounds}</dd></div>
+              <div><dt>Models</dt><dd>{input.targetModelCount}</dd></div>
+            </dl>
+          </div>
+
           <p className="scope-note">The current MVP does not yet support re-rolls, critical hits, variable damage, or Feel No Pain.</p>
         </form>
 
