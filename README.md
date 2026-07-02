@@ -39,12 +39,20 @@ npm run check
 ## 저장소 구조
 
 ```text
-apps/web/                  React 웹 애플리케이션
-packages/calculator/       UI와 독립된 확률 계산 엔진
-docs/proposal.md           프로젝트 프로포절
-docs/technical-design.md   기술 설계서
-.github/workflows/ci.yml   자동 검사
+apps/web/                    React 웹 애플리케이션
+packages/calculator/         UI와 독립된 확률 계산 엔진
+docs/proposal.md             프로젝트 프로포절
+docs/technical-design.md     기술 설계서
+docs/development-guide.md    개발 지침 및 진행 현황
+.github/workflows/ci.yml     자동 검사
+.github/workflows/deploy-pages.yml  GitHub Pages 배포
 ```
+
+## 프로젝트 문서
+
+- [프로젝트 프로포절](docs/proposal.md)
+- [기술 설계서](docs/technical-design.md)
+- [개발 지침 및 진행 현황](docs/development-guide.md)
 
 ## MVP 계산 범위
 
@@ -77,7 +85,7 @@ docs/technical-design.md   기술 설계서
 6. **규칙 확장** — 재굴림, 치명타, 가변 피해, 피해 감소, Feel No Pain, 복수 공격 그룹
 7. **다국어 및 사용성** — 한국어·영어 리소스 분리, 검색 색인, 프리셋과 공유 링크
 
-상세한 목표와 설계 결정은 `docs/` 문서를 참조합니다.
+상세 목표, 설계 결정, 현재 진행 상태는 `docs/` 문서를 참조합니다.
 
 ## 데이터 및 권리
 
