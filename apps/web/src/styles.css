@@ -23,11 +23,14 @@ h3 { margin: 26px 0 14px; font-size: 0.96rem; color: #d8d2c4; }
 select, input { width: 100%; border: 1px solid #454c53; border-radius: 8px; background: #111519; color: #f2efe6; padding: 11px 12px; }
 select:focus, input:focus { outline: 2px solid #c7a75c; outline-offset: 2px; }
 .control-section { margin-top: 28px; padding-top: 24px; border-top: 1px solid #343a40; }
-.weapon-profile { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); margin: 22px 0 0; border: 1px solid #3a4045; border-radius: 10px; background: #111519; overflow: hidden; }
-.weapon-profile div { min-width: 0; padding: 11px 6px; text-align: center; border-right: 1px solid #343a40; }
-.weapon-profile div:last-child { border-right: 0; }
-.weapon-profile dt { font-weight: 700; }
-.weapon-profile dd { font-variant-numeric: tabular-nums; }
+.weapon-profile, .defender-profile { display: grid; margin: 22px 0 0; border: 1px solid #3a4045; border-radius: 10px; background: #111519; overflow: hidden; }
+.weapon-profile { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.defender-profile { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.weapon-profile div, .defender-profile div { min-width: 0; padding: 11px 6px; text-align: center; border-right: 1px solid #343a40; }
+.weapon-profile div:last-child, .defender-profile div:last-child { border-right: 0; }
+.weapon-profile dt, .defender-profile dt { font-weight: 700; }
+.weapon-profile dd, .defender-profile dd { font-variant-numeric: tabular-nums; }
+.profile-note { margin: 9px 0 0; color: #a8adb2; font-size: 0.78rem; text-align: right; }
 .stat-grid, .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .stat-grid { margin: 22px 0 0; }
 .stat-grid div { border-top: 1px solid #363c42; padding-top: 10px; }
@@ -55,5 +58,5 @@ td { text-align: right; font-variant-numeric: tabular-nums; }
   .layout { grid-template-columns: 1fr; }
   .summary-grid { grid-template-columns: 1fr; }
   .summary-grid article { min-height: 92px; }
-  .weapon-profile div { padding-inline: 4px; }
+  .weapon-profile div, .defender-profile div { padding-inline: 4px; }
 }
