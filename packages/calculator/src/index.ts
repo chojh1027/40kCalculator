@@ -21,6 +21,11 @@ export interface OutcomeProbability extends DefenderDamageState {
   probability: number;
 }
 
+export interface ValueProbability {
+  value: number;
+  probability: number;
+}
+
 export interface DestroyedModelProbability {
   destroyedModels: number;
   exactProbability: number;
@@ -31,11 +36,18 @@ export interface CalculationResult {
   summary: {
     expectedEffectiveDamage: number;
     expectedDestroyedModels: number;
-    mostLikelyOutcome: DefenderDamageState;
+    mostLikelyOutcome: OutcomeProbability;
     unitDestroyedProbability: number;
   };
   outcomeDistribution: OutcomeProbability[];
   destroyedModelDistribution: DestroyedModelProbability[];
+  stageDistributions: {
+    hits: ValueProbability[];
+    wounds: ValueProbability[];
+    failedSaves: ValueProbability[];
+    effectiveDamage: ValueProbability[];
+    destroyedModels: ValueProbability[];
+  };
   stageBreakdown: {
     expectedAttacks: number;
     expectedHits: number;
@@ -109,6 +121,33 @@ function binomialProbability(n: number, k: number, p: number): number {
   return binomialCoefficient(n, k) * p ** k * (1 - p) ** (n - k);
 }
 
+function binomialDistribution(trials: number, successProbability: number): ValueProbability[] {
+  const distribution = Array.from({ length: trials + 1 }, (_, value) => ({
+    value,
+    probability: binomialProbability(trials, value, successProbability),
+  }));
+  const totalProbability = distribution.reduce((sum, row) => sum + row.probability, 0);
+
+  return distribution.map((row) => ({
+    ...row,
+    probability: row.probability / totalProbability,
+  }));
+}
+
+function aggregateValueDistribution(
+  rows: Array<{ value: number; probability: number }>,
+): ValueProbability[] {
+  const probabilities = new Map<number, number>();
+  for (const row of rows) {
+    probabilities.set(row.value, (probabilities.get(row.value) ?? 0) + row.probability);
+  }
+
+  const totalProbability = [...probabilities.values()].reduce((sum, probability) => sum + probability, 0);
+  return [...probabilities.entries()]
+    .map(([value, probability]) => ({ value, probability: probability / totalProbability }))
+    .sort((a, b) => a.value - b.value);
+}
+
 export function allocateFixedDamage(
   unsavedAttacks: number,
   damage: number,
@@ -148,7 +187,8 @@ export function calculateBattle(input: BattleInput): CalculationResult {
     input.targetInvulnerableSave,
   );
   const failedSaveProbability = 1 - rollSuccessProbability(saveTarget);
-  const unsavedAttackProbability = hitProbability * woundProbability * failedSaveProbability;
+  const woundFromAttackProbability = hitProbability * woundProbability;
+  const unsavedAttackProbability = woundFromAttackProbability * failedSaveProbability;
 
   const aggregated = new Map<string, OutcomeProbability>();
 
@@ -218,23 +258,37 @@ export function calculateBattle(input: BattleInput): CalculationResult {
     destroyedModelDistribution.push({ destroyedModels, exactProbability, atLeastProbability });
   }
 
+  const effectiveDamageDistribution = aggregateValueDistribution(
+    outcomeDistribution.map((outcome) => ({
+      value: effectiveDamage(outcome),
+      probability: outcome.probability,
+    })),
+  );
+  const destroyedModelsDistribution = destroyedModelDistribution.map((row) => ({
+    value: row.destroyedModels,
+    probability: row.exactProbability,
+  }));
+
   return {
     summary: {
       expectedEffectiveDamage,
       expectedDestroyedModels,
-      mostLikelyOutcome: {
-        destroyedModels: mostLikely.destroyedModels,
-        currentModelRemainingWounds: mostLikely.currentModelRemainingWounds,
-        unitDestroyed: mostLikely.unitDestroyed,
-      },
+      mostLikelyOutcome: { ...mostLikely },
       unitDestroyedProbability,
     },
     outcomeDistribution,
     destroyedModelDistribution,
+    stageDistributions: {
+      hits: binomialDistribution(input.attacks, hitProbability),
+      wounds: binomialDistribution(input.attacks, woundFromAttackProbability),
+      failedSaves: binomialDistribution(input.attacks, unsavedAttackProbability),
+      effectiveDamage: effectiveDamageDistribution,
+      destroyedModels: destroyedModelsDistribution,
+    },
     stageBreakdown: {
       expectedAttacks: input.attacks,
       expectedHits: input.attacks * hitProbability,
-      expectedWounds: input.attacks * hitProbability * woundProbability,
+      expectedWounds: input.attacks * woundFromAttackProbability,
       expectedFailedSaves: input.attacks * unsavedAttackProbability,
       expectedFinalDamage: expectedEffectiveDamage,
     },
