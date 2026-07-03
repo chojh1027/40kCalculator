@@ -245,7 +245,7 @@ export function App() {
     <main className="page-shell">
       <header className="hero">
         <p className="eyebrow">WARHAMMER 40,000</p>
-        <h1>다이스 서비터</h1>
+        <h1>Dice Servitor</h1>
       </header>
 
       <section className="layout" aria-label="Combat probability calculator">
