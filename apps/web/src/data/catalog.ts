@@ -1,3 +1,5 @@
+import type { AttackCount } from "@40k-calculator/calculator";
+
 export type WeaponType = "ranged" | "melee";
 
 export interface Alliance {
@@ -15,7 +17,7 @@ export interface Weapon {
   id: string;
   name: string;
   type: WeaponType;
-  attacks: number;
+  attacks: AttackCount;
   strength: number;
   armorPenetration: number;
   damage: number;
@@ -59,6 +61,15 @@ export const WEAPONS: Weapon[] = [
     attacks: 2,
     strength: 4,
     armorPenetration: -1,
+    damage: 1,
+  },
+  {
+    id: "temporary-d6-blaster",
+    name: "D6 Test Blaster (Temporary)",
+    type: "ranged",
+    attacks: { kind: "dice", count: 1, sides: 6 },
+    strength: 4,
+    armorPenetration: 0,
     damage: 1,
   },
   {
@@ -131,7 +142,7 @@ export const UNITS: Unit[] = [
     defaultModelCount: 5,
     minModelCount: 5,
     maxModelCount: 10,
-    weaponIds: ["bolt-rifle", "chainsword"],
+    weaponIds: ["bolt-rifle", "temporary-d6-blaster", "chainsword"],
   },
   {
     id: "hellblaster-squad",
