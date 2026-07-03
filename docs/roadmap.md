@@ -1,6 +1,6 @@
 # Dice Servitor 개발 로드맵
 
-- 문서 상태: v0.4
+- 문서 상태: v0.5
 - 기준일: 2026-07-03
 - 대상 저장소: `chojh1027/40kCalculator`
 - 관련 문서: [프로젝트 프로포절](./proposal.md), [기술 설계서](./technical-design.md), [개발 지침 및 진행 현황](./development-guide.md)
@@ -23,11 +23,11 @@
 
 계산 엔진은 고정값 또는 가변 주사위 공격 횟수와 고정 피해를 사용하는 단일 공격 그룹에 대해 명중, 상처, 내성, 피해 할당을 실제 이산 확률분포로 계산한다. 다중 운드 모델과 일반 피해의 초과 피해 비전달(non-spill)을 처리하며, 평균 유효 피해, 평균 파괴 모델 수, 가장 가능성이 높은 결과와 전멸 확률을 반환한다.
 
-공통 PMF 모듈과 `DiceExpression` 모듈이 실제 전투 파이프라인에 연결됐다. `BattleInput.attacks`는 기존 숫자 입력과 고정값, D3, D6, `2D6+1` 같은 `DiceExpression`을 모두 지원하며, 공격 횟수별 명중·상처·내성·최종 상태 분포를 조건부 PMF로 합성한다. `BattleInput.damage`는 아직 고정 `number`다.
+공통 PMF 모듈과 `DiceExpression` 모듈이 실제 전투 파이프라인에 연결됐다. `BattleInput.attacks`는 기존 숫자 입력과 고정값, D3, D6, `2D6+1` 같은 `DiceExpression`을 모두 지원하며, 공격 횟수별 명중·상처·내성·최종 상태 분포를 조건부 PMF로 합성한다. 여러 모델이 같은 가변 공격 무장을 사용하면 `repeatAttackCount`로 각 모델의 독립 주사위를 합산한다. `BattleInput.damage`는 아직 고정 `number`다.
 
-웹 UI는 영어로 제공되며 Alliance → Faction → Unit → Weapon 순서로 공격 대상을 구성하고 방어 유닛을 선택할 수 있다. 서비스 표시 이름은 `Dice Servitor`다.
+웹 UI는 영어로 제공되며 Alliance → Faction → Unit → Weapon 순서로 공격 대상을 구성하고 방어 유닛을 선택할 수 있다. 서비스 표시 이름은 `Dice Servitor`다. 공격 프로필은 `D6`, `2D6+1` 형식으로 표시할 수 있고 공격 횟수 분포를 결과 화면에서 확인할 수 있다.
 
-유닛과 무장 데이터는 `apps/web/src/data/catalog.ts`로 UI 컴포넌트에서 분리됐지만 아직 TypeScript 번들에 포함된 샘플 카탈로그다. 현재 샘플 무장과 UI는 고정 공격 값을 사용하므로 가변 공격 기능은 계산 엔진 API에서 먼저 지원한다.
+유닛과 무장 데이터는 `apps/web/src/data/catalog.ts`로 UI 컴포넌트에서 분리됐지만 아직 TypeScript 번들에 포함된 샘플 카탈로그다. `Intercessor Squad`에 연결된 `D6 Test Blaster (Temporary)`는 가변 공격 계산을 확인하기 위한 임시 데이터이며 정식 게임 데이터가 아니다.
 
 ### 완료된 기반
 
@@ -40,6 +40,8 @@
 | 공통 PMF 자료구조 | ✅ | 정규화, 병합, 합성, 반복, 요약 연산 |
 | `DiceExpression` | ✅ | 고정값·복수 주사위·보정치 표현 및 PMF 변환 |
 | 가변 공격 횟수 | ✅ | 숫자 호환, 공격 PMF와 전투 단계 혼합 합성 |
+| 모델별 공격 반복 | ✅ | 동일 무장의 독립 공격 표현 합산 |
+| 가변 공격 UI 샘플 | ✅ | 임시 D6 무장 선택, 표시와 공격 분포 출력 |
 | 확률 코어 단위 테스트 | ✅ | 정상·경계·회귀 사례 검증 |
 | 영어 선택형 UI | ✅ | Alliance, Faction, Unit, Weapon 선택 |
 | 유닛·무장 분리 | 🟡 | 타입과 카탈로그는 분리됐으나 외부 데이터는 아님 |
@@ -48,7 +50,7 @@
 ### 현재 핵심 제약
 
 - 실제 전투 계산의 피해량은 고정 정수다.
-- 웹 샘플 데이터와 UI는 아직 고정 공격 횟수만 입력한다.
+- `D6 Test Blaster (Temporary)`는 계산 검증용이며 정식 게임 데이터가 아니다.
 - 단일 공격 그룹만 지원한다.
 - 재굴림, 치명타, 추가 명중, 치명상, 피해 감소, Feel No Pain을 지원하지 않는다.
 - 유닛과 모델 프로필이 하나의 `Unit` 타입에 결합돼 있다.
@@ -135,17 +137,21 @@ type DiceExpression =
 ```text
 packages/calculator/src/index.ts
 packages/calculator/src/index.test.ts
+apps/web/src/App.tsx
+apps/web/src/data/catalog.ts
 ```
 
 제공 기능:
 
 - `BattleInput.attacks`에 `number | DiceExpression` 지원
 - `attackCountToPmf`를 통한 공격 횟수 검증과 PMF 변환
+- `repeatAttackCount`를 통한 모델별 독립 공격 표현 합산
 - 공격 횟수별 명중·상처·실패 내성 분포의 조건부 합성
 - 실패 내성 분포에서 최종 방어 모델 상태 PMF 합성
 - `stageDistributions.attacks`와 정확한 평균 공격 횟수 제공
 - 기존 숫자 공격 입력과 고정 `DiceExpression` 결과의 동일성 유지
-- D6, `2D6+1`, 0회 공격과 최대 공격 횟수 경계 테스트
+- D6, `2D6+1`, 모델별 반복, 0회 공격과 최대 공격 횟수 경계 테스트
+- 임시 `D6 Test Blaster (Temporary)` 무장 선택 및 UI 표시
 
 ---
 
@@ -161,6 +167,8 @@ packages/calculator/src/index.test.ts
 - [x] PMF 정규화, 합성, 변환, 반복, 기대값, 최빈값 연산 구현
 - [x] 고정값과 D3, D6를 표현하는 `DiceExpression` 정의
 - [x] `BattleInput.attacks`의 가변 공격 횟수 지원
+- [x] 모델별 가변 공격 표현 반복
+- [x] 가변 공격 임시 데이터와 UI 확인 경로
 - [ ] `BattleInput.damage`의 가변 피해 지원
 - [x] 기존 고정값 계산을 PMF 구조로 이전
 - [ ] 골든 테스트 추가
@@ -275,6 +283,7 @@ release
 | 1 | 공통 PMF 자료구조 | ✅ |
 | 2 | `DiceExpression` 정의와 PMF 변환 | ✅ |
 | 3 | 가변 공격 횟수 | ✅ |
+| 3-A | 임시 D6 무장과 UI 검증 경로 | ✅ |
 | 4 | 가변 피해와 피해 할당 PMF | ⬜ |
 | 5 | 골든·불변식 테스트 강화 | ⬜ |
 | 6 | 정식 데이터 스키마와 외부 JSON | ⬜ |
