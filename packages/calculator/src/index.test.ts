@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  allocateDamagePmf,
   allocateFixedDamage,
   attackCountToPmf,
   calculateBattle,
+  damageAmountToPmf,
   repeatAttackCount,
   woundTarget,
 } from "./index";
@@ -54,6 +56,31 @@ describe("attackCountToPmf", () => {
   });
 });
 
+describe("damageAmountToPmf", () => {
+  it("keeps numeric damage as a certain distribution", () => {
+    expect(damageAmountToPmf(3).entries).toEqual([
+      { value: 3, probability: 1 },
+    ]);
+  });
+
+  it("converts D6 damage to an exact uniform distribution", () => {
+    const distribution = damageAmountToPmf({ kind: "dice", count: 1, sides: 6 });
+
+    expect(distribution.entries.map((entry) => entry.value)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(distribution.expectation((value) => value)).toBeCloseTo(3.5, 12);
+    expect(distribution.totalProbability()).toBeCloseTo(1, 12);
+  });
+
+  it("rejects zero and excessive damage results", () => {
+    expect(() => damageAmountToPmf({ kind: "fixed", value: 0 })).toThrow(
+      "damage must produce an integer between 1 and 30.",
+    );
+    expect(() => damageAmountToPmf({ kind: "dice", count: 6, sides: 6 })).toThrow(
+      "damage must produce an integer between 1 and 30.",
+    );
+  });
+});
+
 describe("repeatAttackCount", () => {
   it("multiplies fixed numeric attacks by the number of attacking models", () => {
     expect(repeatAttackCount(2, 5)).toBe(10);
@@ -81,8 +108,8 @@ describe("repeatAttackCount", () => {
   });
 });
 
-describe("allocateFixedDamage", () => {
-  it("does not spill ordinary damage to the next model", () => {
+describe("damage allocation", () => {
+  it("does not spill ordinary fixed damage to the next model", () => {
     expect(allocateFixedDamage(1, 3, 2, 5)).toEqual({
       destroyedModels: 1,
       currentModelRemainingWounds: 2,
@@ -90,8 +117,52 @@ describe("allocateFixedDamage", () => {
     });
   });
 
-  it("applies successive damage events to successive models", () => {
+  it("applies successive fixed damage events to successive models", () => {
     expect(allocateFixedDamage(2, 3, 2, 5).destroyedModels).toBe(2);
+  });
+
+  it("keeps fixed numeric and fixed-expression allocations identical", () => {
+    expect(allocateDamagePmf(4, 2, 3, 5).entries).toEqual(
+      allocateDamagePmf(4, { kind: "fixed", value: 2 }, 3, 5).entries,
+    );
+  });
+
+  it("applies one D6 damage event without spilling excess damage", () => {
+    const distribution = allocateDamagePmf(
+      1,
+      { kind: "dice", count: 1, sides: 6 },
+      3,
+      2,
+    );
+
+    expect(distribution.totalProbability()).toBeCloseTo(1, 12);
+    expect(
+      distribution.probabilityOf(
+        (state) => state.destroyedModels === 1 && state.currentModelRemainingWounds === 3,
+      ),
+    ).toBeCloseTo(4 / 6, 12);
+    expect(
+      distribution.probabilityOf(
+        (state) => state.destroyedModels === 0 && state.currentModelRemainingWounds === 2,
+      ),
+    ).toBeCloseTo(1 / 6, 12);
+    expect(
+      distribution.probabilityOf(
+        (state) => state.destroyedModels === 0 && state.currentModelRemainingWounds === 1,
+      ),
+    ).toBeCloseTo(1 / 6, 12);
+  });
+
+  it("applies independent D6 damage for each failed save", () => {
+    const distribution = allocateDamagePmf(
+      2,
+      { kind: "dice", count: 1, sides: 6 },
+      3,
+      2,
+    );
+
+    expect(distribution.totalProbability()).toBeCloseTo(1, 12);
+    expect(distribution.probabilityOf((state) => state.unitDestroyed)).toBeCloseTo(4 / 9, 12);
   });
 });
 
@@ -112,6 +183,7 @@ describe("calculateBattle", () => {
     expect(outcomeProbabilitySum).toBeCloseTo(1, 12);
     expect(first).toEqual(second);
     expect(first.stageBreakdown.expectedFailedSaves).toBeCloseTo(2 / 3, 12);
+    expect(first.stageBreakdown.expectedDamagePerFailedSave).toBe(1);
     expect(first.summary.mostLikelyOutcome.probability).toBeGreaterThan(0);
 
     for (const distribution of Object.values(first.stageDistributions)) {
@@ -133,6 +205,21 @@ describe("calculateBattle", () => {
     expect(fixedExpressionResult).toEqual(numericResult);
   });
 
+  it("keeps numeric and fixed-expression damage results identical", () => {
+    const numericResult = calculateBattle({
+      ...BASE_INPUT,
+      attacks: 6,
+      damage: 2,
+    });
+    const fixedExpressionResult = calculateBattle({
+      ...BASE_INPUT,
+      attacks: 6,
+      damage: { kind: "fixed", value: 2 },
+    });
+
+    expect(fixedExpressionResult).toEqual(numericResult);
+  });
+
   it("mixes hit, wound, save, and outcome distributions across D6 attacks", () => {
     const result = calculateBattle({
       ...BASE_INPUT,
@@ -147,6 +234,22 @@ describe("calculateBattle", () => {
       expect(distribution.reduce((sum, row) => sum + row.probability, 0)).toBeCloseTo(1, 12);
     }
     expect(result.outcomeDistribution.reduce((sum, row) => sum + row.probability, 0)).toBeCloseTo(1, 12);
+  });
+
+  it("mixes independent D6 damage events across failed saves", () => {
+    const result = calculateBattle({
+      ...BASE_INPUT,
+      attacks: 6,
+      damage: { kind: "dice", count: 1, sides: 6 },
+      targetWounds: 3,
+    });
+
+    expect(result.stageDistributions.damagePerFailedSave.map((row) => row.value)).toEqual([
+      1, 2, 3, 4, 5, 6,
+    ]);
+    expect(result.stageBreakdown.expectedDamagePerFailedSave).toBeCloseTo(3.5, 12);
+    expect(result.outcomeDistribution.reduce((sum, row) => sum + row.probability, 0)).toBeCloseTo(1, 12);
+    expect(result.summary.expectedEffectiveDamage).toBeGreaterThan(0);
   });
 
   it("supports multiple attack dice and modifiers", () => {
@@ -166,7 +269,7 @@ describe("calculateBattle", () => {
       skill: 3,
       strength: 4,
       armorPenetration: -1,
-      damage: 1,
+      damage: { kind: "dice", count: 1, sides: 3 },
       targetToughness: 4,
       targetSave: 3,
       targetWounds: 2,
@@ -186,13 +289,13 @@ describe("calculateBattle", () => {
     expect(expectedDestroyedModels).toBeCloseTo(result.summary.expectedDestroyedModels, 12);
   });
 
-  it("returns zero damage for zero attacks", () => {
+  it("returns zero final damage for zero attacks while preserving the weapon damage PMF", () => {
     const result = calculateBattle({
       attacks: 0,
       skill: 2,
       strength: 10,
       armorPenetration: -6,
-      damage: 6,
+      damage: { kind: "dice", count: 1, sides: 6 },
       targetToughness: 1,
       targetSave: 7,
       targetWounds: 1,
@@ -203,6 +306,7 @@ describe("calculateBattle", () => {
     expect(result.summary.unitDestroyedProbability).toBe(0);
     expect(result.stageDistributions.attacks).toEqual([{ value: 0, probability: 1 }]);
     expect(result.stageDistributions.hits).toEqual([{ value: 0, probability: 1 }]);
+    expect(result.stageDistributions.damagePerFailedSave).toHaveLength(6);
     expect(result.stageDistributions.effectiveDamage).toEqual([{ value: 0, probability: 1 }]);
   });
 });
