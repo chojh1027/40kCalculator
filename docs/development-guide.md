@@ -1,6 +1,6 @@
 # Dice Servitor 개발 지침 및 진행 현황
 
-- 문서 상태: v0.11
+- 문서 상태: v0.12
 - 기준일: 2026-07-03
 - 대상 저장소: `chojh1027/40kCalculator`
 - 관련 문서: [프로젝트 프로포절](./proposal.md), [기술 설계서](./technical-design.md), [개발 로드맵](./roadmap.md)
@@ -28,67 +28,27 @@
 
 - 가변 주사위와 복수 결과 상태는 `Pmf<T>`로 합성한다.
 - 객체 상태는 명시적 키로 병합한다.
-- 확률 상태를 평균값 하나로 조기에 축약하지 않는다.
+- 향후 규칙이 참조할 상태를 평균값이나 합계로 조기에 축약하지 않는다.
 
 ---
 
-## 2. 명중·상처 재굴림 지침
+## 2. 명중 규칙 지침
 
-### 공개 입력
+### 재굴림
 
 ```ts
 type RerollPolicy =
   | { readonly kind: "none" }
   | { readonly kind: "ones" }
   | { readonly kind: "failures" };
-
-interface BattleInput {
-  skill: number;
-  hitReroll?: RerollPolicy;
-  criticalHitOn?: number;
-  strength: number;
-  woundReroll?: RerollPolicy;
-}
 ```
 
-생략 시 기본값:
-
-```text
-hitReroll      none
-woundReroll    none
-criticalHitOn  6
-```
-
-### 재굴림 처리 규칙
-
-- 재굴림은 최초 주사위 결과에 한 번만 적용한다.
+- 재굴림은 최초 결과에 한 번만 적용한다.
 - 재굴림된 결과는 다시 재굴림하지 않는다.
-- `ones`는 최초 결과가 1인 경우만 재굴림한다.
-- `failures`는 Critical 결과를 포함한 성공 판정 이후 실패한 최초 결과만 재굴림한다.
 - 자연 1은 항상 실패다.
+- 실패 재굴림은 Critical Hit 판정 후 실패한 결과만 대상으로 한다.
 
-### Critical Hit 판정
-
-최종 비보정 명중 주사위는 다음 상태 중 하나다.
-
-```text
-failure
-normal hit
-critical hit
-```
-
-판정 순서:
-
-1. 1이면 실패
-2. `face >= criticalHitOn`이면 Critical Hit
-3. `face >= skill`이면 일반 명중
-4. 나머지는 실패
-
-Critical Hit 기준은 2~6만 허용한다. Critical Hit은 일반 명중 기준보다 낮은 결과에서도 성공할 수 있다.
-
-### 결합분포 보존
-
-공격 수별로 다음 상태를 유지한다.
+### Critical Hit 상태
 
 ```ts
 interface HitCountState {
@@ -97,59 +57,131 @@ interface HitCountState {
 }
 ```
 
-키:
-
-```text
-normalHits:criticalHits
-```
-
-총 명중은 파생값이다.
-
-```text
-totalHits = normalHits + criticalHits
-```
-
-Critical Hit을 일반 명중에 즉시 합쳐 버리지 않는다. Sustained Hits와 Lethal Hits가 원래 Critical Hit 수를 사용하기 때문이다.
+Critical Hit은 일반 명중과 별도 상태로 유지한다.
 
 ---
 
-## 3. 계산 결과 지침
+## 3. Sustained Hits와 Lethal Hits 지침
 
-공개 결과는 다음을 포함한다.
+### 공개 입력
+
+```ts
+type SustainedHitCount = number | DiceExpression;
+
+interface BattleInput {
+  sustainedHits?: SustainedHitCount;
+  lethalHits?: boolean;
+}
+```
+
+생략 시:
+
+```text
+sustainedHits  0
+lethalHits     false
+```
+
+### Sustained Hits
+
+- Critical Hit 하나마다 추가 명중 수를 독립적으로 결정한다.
+- 고정 숫자와 `DiceExpression`을 지원한다.
+- 현재 Critical Hit당 가능한 추가 명중 범위는 `0~6`이다.
+- 추가 명중은 일반 명중으로 취급한다.
+- 추가 명중은 새로운 명중 굴림이 아니며 Critical Hit을 발생시키지 않는다.
+- 규칙 적용 후 총 명중 수는 최대 600으로 제한한다.
+
+### Lethal Hits
+
+- 원래 Critical Hit 하나마다 자동 상처 하나를 만든다.
+- 자동 상처는 상처 굴림과 상처 재굴림을 거치지 않는다.
+- 자동 상처도 이후 내성 굴림은 정상적으로 거친다.
+
+### 동시 적용
+
+```text
+original Critical Hit
+├─ automatic wound from Lethal Hits
+└─ extra normal hits from Sustained Hits → wound rolls
+```
+
+원래 Critical Hit과 추가 명중을 반드시 구분한다.
+
+### 규칙 적용 후 상태
+
+```ts
+interface ResolvedHitState {
+  readonly normalHits: number;
+  readonly criticalHits: number;
+  readonly sustainedHits: number;
+  readonly totalHits: number;
+  readonly woundRolls: number;
+  readonly automaticWounds: number;
+}
+```
+
+불변식:
+
+```text
+totalHits = normalHits + criticalHits + sustainedHits
+```
+
+Lethal Hits 적용 시:
+
+```text
+automaticWounds = criticalHits
+woundRolls = normalHits + sustainedHits
+```
+
+Lethal Hits 미적용 시:
+
+```text
+automaticWounds = 0
+woundRolls = normalHits + criticalHits + sustainedHits
+```
+
+---
+
+## 4. 계산 결과 지침
+
+공개 결과:
 
 ```text
 hitOutcomeDistribution
 stageDistributions.normalHits
 stageDistributions.criticalHits
+stageDistributions.sustainedHits
 stageDistributions.hits
-stageBreakdown.expectedNormalHits
-stageBreakdown.expectedCriticalHits
-stageBreakdown.expectedHits
+stageDistributions.woundRolls
+stageDistributions.automaticWounds
+stageDistributions.wounds
 ```
 
-불변식:
+```text
+stageBreakdown.expectedNormalHits
+stageBreakdown.expectedCriticalHits
+stageBreakdown.expectedSustainedHits
+stageBreakdown.expectedHits
+stageBreakdown.expectedWoundRolls
+stageBreakdown.expectedAutomaticWounds
+stageBreakdown.expectedWounds
+```
 
-- 모든 hit outcome 행에서 `totalHits = normalHits + criticalHits`
-- 결합분포 확률 합은 1
-- 동일한 `normalHits:criticalHits` 상태는 중복되지 않음
-- 평균 총 명중은 평균 일반 명중과 평균 Critical Hit의 합
-
-상처 단계는 현재 총 명중 수에 상처 성공 PMF를 적용한다. 다음 단계에서 Lethal Hits가 추가되면 원래 Critical Hit 수를 자동 상처 경로로 분리한다.
+`hits`는 규칙 적용 후 총 명중 수다. `wounds`는 상처 굴림 성공과 자동 상처를 합친 값이다.
 
 ---
 
-## 4. 기존 계산 지침
+## 5. 기존 계산 지침
 
 - 공격 횟수는 `0~200`
 - 피해 결과는 `1~30`
-- 주사위 결과는 안전한 정수여야 함
-- 일반 피해의 초과 피해는 다음 모델로 전달하지 않음
+- 음수가 가능한 공격 표현은 거부
 - 실패한 내성마다 피해 주사위를 독립적으로 적용
+- 일반 피해의 초과 피해는 다음 모델로 전달하지 않음
 - 방어 상태는 파괴 모델 수, 현재 모델 잔여 운드와 전멸 여부로 병합
 
 ---
 
-## 5. 게임 데이터 지침
+## 6. 게임 데이터 지침
 
 정규화된 엔티티:
 
@@ -166,9 +198,9 @@ Ability
 - 표시 이름을 참조 키로 사용하지 않음
 - 중복 ID와 누락 참조는 카탈로그 전체 오류
 - JSON은 `unknown`으로 받아 `parseGameDataCatalog`를 통과한 뒤 사용
-- 현재 `Ability`는 참조 계약만 있고 계산 효과는 아직 연결되지 않음
+- 현재 `Ability`는 이름과 설명만 있고 계산 효과는 아직 없음
 
-다음 Ability 확장에서는 임의 JavaScript를 데이터에 넣지 않는다. 등록된 효과 종류와 매개변수만 허용한다.
+다음 Ability 확장은 임의 JavaScript를 허용하지 않고 선언형 효과만 저장한다.
 
 예상 방향:
 
@@ -177,42 +209,45 @@ type AbilityEffect =
   | { kind: "hit-reroll"; policy: RerollPolicy }
   | { kind: "wound-reroll"; policy: RerollPolicy }
   | { kind: "critical-hit-threshold"; value: number }
-  | { kind: "sustained-hits"; extraHits: DiceExpression }
+  | { kind: "sustained-hits"; extraHits: SustainedHitCount }
   | { kind: "lethal-hits" };
 ```
 
 ---
 
-## 6. 테스트 지침
+## 7. 테스트 지침
 
-### 단일 주사위 확률
+### Critical Hit 효과 단위 테스트
 
-`roll-rules.test.ts`:
+`critical-hit-effects.test.ts`:
 
-- 재굴림 없음
-- 1 재굴림
-- 실패 재굴림
-- 재굴림 결과의 재재굴림 금지
-- Critical 기준이 일반 성공 기준보다 낮은 경우
-- 잘못된 정책과 임계값 거부
-- 결과 확률 객체의 정규화 검증
+- 효과 없음
+- 고정 Sustained Hits
+- 가변 Sustained Hits의 독립 반복
+- Lethal Hits 자동 상처
+- 두 능력 동시 적용
+- 잘못된 범위와 타입 거부
+- 총 명중 상한 검증
 
-### 전투 통합
+### 전투 통합 테스트
 
-`battle-roll-rules.test.ts`:
+`critical-hit-abilities.test.ts`:
 
-- 명시적 `none`과 생략 기본값의 완전 동일성
-- 명중 재굴림별 단계 기대값
-- 상처 재굴림 독립 적용
-- Critical Hit 결합분포 정규화와 상태 유일성
-- 재굴림 추가 시 평균 피해 비감소
+- 명시적 비활성 값과 생략 기본값의 동일성
+- Sustained Hits 기대값
+- 가변 Sustained Hits 분포
+- Lethal Hits 자동 상처 기대값
+- 두 능력의 경로 분리
+- 자동 상처에 상처 재굴림이 적용되지 않는지 검증
+- 공개 분포 정규화와 상태 유일성
+- 능력 추가 시 평균 피해 비감소
 
 ### 기존 검증
 
 - 골든 테스트
+- 재굴림 확률
 - 공개 분포 정규화
-- 결정성
-- 방어 내성·모델 수 단조성
+- 결정성과 단조성
 - non-spill 피해 할당
 - 외부 데이터 값·참조 검증
 
@@ -224,7 +259,7 @@ npm run check
 
 ---
 
-## 7. 현재 구현 상태
+## 8. 현재 구현 상태
 
 ### 계산 엔진
 
@@ -233,11 +268,11 @@ npm run check
 | 고정·가변 공격 | ✅ | 숫자와 `DiceExpression` |
 | 고정·가변 피해 | ✅ | 실패 내성별 독립 피해 |
 | 다중 운드·non-spill | ✅ | 방어 상태 PMF |
-| 명중 재굴림 | ✅ | none, ones, failures |
-| 상처 재굴림 | ✅ | none, ones, failures |
+| 명중·상처 재굴림 | ✅ | none, ones, failures |
 | Critical Hit | ✅ | 결합분포와 임계값 |
-| Sustained Hits | ⬜ | 다음 단계 |
-| Lethal Hits | ⬜ | 다음 단계 |
+| Sustained Hits | ✅ | 고정·가변 추가 명중 |
+| Lethal Hits | ✅ | 자동 상처 경로 |
+| 두 능력 동시 적용 | ✅ | 원래 Critical과 추가 명중 분리 |
 | Critical Wound | ⬜ | 후속 단계 |
 
 ### 데이터
@@ -247,7 +282,7 @@ npm run check
 | 정규화 스키마 | ✅ | Unit, Model, Weapon, Ability |
 | 외부 JSON | ✅ | 샘플 카탈로그 |
 | 런타임 검증 | ✅ | 값·필드·ID·참조 |
-| Ability 효과 연결 | ⬜ | 후속 단계 |
+| Ability 효과 연결 | ⬜ | 다음 단계 |
 | manifest·IndexedDB | ⬜ | 후속 단계 |
 
 ### 배포
@@ -260,18 +295,18 @@ npm run check
 
 ---
 
-## 8. 다음 개발 우선순위
+## 9. 다음 개발 우선순위
 
-1. Sustained Hits 입력과 추가 명중 PMF
-2. Lethal Hits 자동 상처 경로
-3. 두 규칙 동시 적용
-4. Ability 데이터 효과 타입
-5. WeaponProfile Ability 해석
+1. `AbilityEffect` 선언형 union
+2. Ability 효과 런타임 검증
+3. Unit·Weapon Ability 효과 수집
+4. 효과 충돌·중첩 합성 정책
+5. 계산 규칙 객체 생성
 6. 웹 UI 규칙 표시
 
 ---
 
-## 9. 기능 추가 체크리스트
+## 10. 기능 추가 체크리스트
 
 - [ ] 규칙 적용 시점을 정의했다.
 - [ ] 원래 굴림과 자동 생성 결과를 구분했다.
@@ -284,7 +319,7 @@ npm run check
 
 ---
 
-## 10. 문서 갱신 규칙
+## 11. 문서 갱신 규칙
 
 - 구현 상태: `development-guide.md`, `roadmap.md`
 - 구조와 기술 결정: `technical-design.md`
