@@ -1,6 +1,6 @@
 # Dice Servitor 기술 설계서
 
-- 문서 상태: v0.3
+- 문서 상태: v0.4
 - 기준일: 2026-07-03
 - 관련 문서: [`proposal.md`](./proposal.md), [`roadmap.md`](./roadmap.md), [`development-guide.md`](./development-guide.md)
 - 목적: 제품 목표를 실제 개발 가능한 계산·데이터·배포 구조로 구체화한다.
@@ -74,6 +74,7 @@
 import {
   attackCountToPmf,
   calculateBattle,
+  repeatAttackCount,
   type AttackCount,
 } from "@40k-calculator/calculator";
 import { Pmf } from "@40k-calculator/calculator/pmf";
@@ -144,6 +145,8 @@ const twoD6PlusOne: DiceExpression = {
 
 `diceExpressionBounds`는 가능한 최솟값과 최댓값을 반환한다. `diceExpressionToPmf`는 표현을 정확한 `Pmf<number>`로 변환한다. `attackCountToPmf`는 숫자 입력을 확정 분포로 바꾸고 공격 횟수 의미 범위를 적용한다.
 
+`repeatAttackCount(attacks, repetitions)`는 모델별 공격 표현을 독립적으로 반복한다. 숫자와 고정값은 곱셈으로 처리하고, `D6`을 5회 반복하면 `5D6`, `2D6+1`을 3회 반복하면 `6D6+3`으로 변환한다. 반복 결과는 다시 공격 횟수 범위와 주사위 표현 범위를 검증한다.
+
 다음 단계에서는 `BattleInput.damage`도 `number | DiceExpression`으로 확장한다. 이후 공격자, 방어자, 복수 공격 그룹, 전역 효과와 데이터 릴리스 ID를 포함하는 `BattleContext`로 확장한다.
 
 ## 5. 공통 PMF 모델
@@ -176,7 +179,8 @@ interface PmfEntry<T> {
 현재 계산 파이프라인:
 
 ```text
-입력 검증
+무장의 모델당 공격 표현
+→ 공격 모델 수만큼 독립 반복
 → 숫자 또는 DiceExpression 공격 횟수를 PMF로 변환
 → 공격 횟수별 명중 이항분포를 조건부 합성
 → 공격 횟수별 상처 이항분포를 조건부 합성
@@ -205,6 +209,8 @@ interface PmfEntry<T> {
 ### 공격 횟수
 
 `attackCountToPmf`는 기존 숫자 공격 횟수를 확률 1의 PMF로 바꾸거나 `DiceExpression`을 정확한 공격 횟수 PMF로 변환한다. 공개 결과의 `stageDistributions.attacks`는 이 분포를 정렬된 값-확률 목록으로 제공한다.
+
+웹 카탈로그의 `Weapon.attacks`는 모델당 `AttackCount`다. UI는 선택한 모델 수를 `repeatAttackCount`에 전달해 전체 공격 표현을 만들고 계산 엔진에 전달한다. 예를 들어 `D6 Test Blaster (Temporary)`를 모델 5명이 사용하면 전체 공격 표현은 `5D6`이다.
 
 ### 명중
 
@@ -265,13 +271,14 @@ interface CalculationResult {
 
 결과 화면은 다음 값을 우선 표시한다.
 
+- 평균 공격 횟수와 공격 횟수 분포
 - 평균 유효 피해
 - 평균 파괴 모델 수
 - 가장 가능성이 높은 피해 상태
 - 방어 유닛 전멸 확률
 - 정확히 N개 모델을 파괴할 확률
 - N개 이상 모델을 파괴할 누적 확률
-- 단계별 공격·명중·상처·실패 내성 분포와 기대값
+- 단계별 명중·상처·실패 내성 분포와 기대값
 
 정규분포를 가정하지 않으며 실제 이산 확률분포를 사용한다.
 
@@ -290,6 +297,8 @@ EffectDefinition
 DataRelease
 TranslationEntry
 ```
+
+현재 샘플 `Weapon.attacks`는 `AttackCount`를 사용한다. `D6 Test Blaster (Temporary)`는 UI와 계산 경로 검증용이며 공식 데이터 출처를 가진 정식 프로필이 아니다.
 
 게임 데이터에는 출처, 규칙 버전, 적용 시작일과 마지막 수정일을 기록한다. 데이터는 공통 규칙과 진영별 청크로 분할한다.
 
@@ -334,6 +343,7 @@ generated-data/
 - 복수 주사위와 보정치 분포
 - 숫자 공격과 고정 `DiceExpression`의 회귀 동일성
 - D6와 `2D6+1` 공격 횟수 분포 및 기대값
+- 모델별 D6 공격 반복과 보정치 반복
 - 공격 횟수별 명중·상처·내성 혼합 분포
 - 명중·상처·내성 확률
 - 일반 피해의 초과 피해 비전달
@@ -370,7 +380,7 @@ Pull Request와 `main` 변경 시 다음 검사를 수행한다.
 ## 12. 단계별 구현 계획
 
 1. **계산 코어**: PMF, 주사위 표현, 기본 전투 단계, 피해 할당
-2. **가변 공격·피해**: 가변 공격 완료, 가변 피해와 상태 전이 통합 진행
+2. **가변 공격·피해**: 가변 공격과 임시 UI 검증 완료, 가변 피해와 상태 전이 통합 진행
 3. **기본 웹 UI**: 프리셋 선택, 결과 요약, 확률 막대그래프
 4. **외부 데이터와 스키마**: 고유 ID, 런타임 검증, 진영별 JSON
 5. **릴리스와 로컬 저장**: manifest, IndexedDB, 버전 전환
@@ -387,8 +397,10 @@ Pull Request와 `main` 변경 시 다음 검사를 수행한다.
 - `DiceExpression` 타입, 범위 검증과 PMF 변환
 - 고정값, D3, D6와 복수 주사위 분포
 - 숫자 또는 `DiceExpression` 기반 가변 공격 횟수
+- 모델 수에 따른 독립 공격 표현 반복
 - 공격 횟수별 명중·상처·내성·최종 상태 PMF 합성
 - `stageDistributions.attacks`와 평균 공격 횟수
+- 임시 D6 무장 선택, 프로필 표시와 공격 분포 UI
 - 단일 공격 그룹의 고정 피해
 - 기본 명중·상처·내성·무적 내성
 - 일반 피해의 non-spill 처리
