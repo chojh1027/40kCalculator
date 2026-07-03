@@ -1,6 +1,6 @@
 # Dice Servitor 기술 설계서
 
-- 문서 상태: v0.6
+- 문서 상태: v0.7
 - 기준일: 2026-07-03
 - 관련 문서: [`proposal.md`](./proposal.md), [`roadmap.md`](./roadmap.md), [`development-guide.md`](./development-guide.md)
 - 목적: 제품 목표를 실제 개발 가능한 계산·데이터·배포 구조로 구체화한다.
@@ -15,6 +15,7 @@
 - 공통 PMF 자료구조와 주사위 표현
 - 데이터 주도형 유닛·무장·효과 모델
 - 골든·불변식 기반 계산 회귀 검증
+- npm Workspaces와 루트 lockfile 기반 재현 가능한 설치
 - 향후 IndexedDB 기반 로컬 데이터 저장
 - 진영별 데이터 청크와 불변 릴리스
 - 로컬 데이터 갱신 CLI
@@ -49,6 +50,10 @@
 
 대표 입력의 수치 결과를 골든 테스트로 고정한다. 확률 합, 상태 유효성, 결정성과 단조성은 입력 매트릭스 기반 불변식 테스트로 검증한다. 골든 값 변경은 규칙 변경 또는 확인된 버그 수정과 함께 수행한다.
 
+### 재현 가능한 의존성 설치
+
+워크스페이스 전체는 루트 `package-lock.json` 하나로 잠근다. CI와 배포는 lockfile을 변경하지 않는 `npm ci`를 사용한다. `package.json`과 lockfile이 불일치하면 설치 단계에서 실패해야 한다.
+
 ### 불변 데이터 릴리스
 
 이미 배포된 데이터 릴리스는 수정하거나 덮어쓰지 않는다. 오류 수정도 새 릴리스 ID로 배포해 과거 계산의 재현성과 롤백 가능성을 유지한다.
@@ -72,6 +77,8 @@
 │  └─ data-tool/                   후속 단계: 데이터 갱신 CLI
 ├─ data-source/                    후속 단계: 원본 CSV/YAML
 ├─ generated-data/                 후속 단계: 릴리스와 진영별 청크
+├─ package-lock.json               npm Workspaces 전체 잠금
+├─ .npmrc                          lockfile v3와 정확한 버전 저장 정책
 ├─ docs/
 └─ .github/workflows/
 ```
@@ -96,7 +103,66 @@ import {
 } from "@40k-calculator/calculator/dice-expression";
 ```
 
-## 4. 전투 입력 모델
+## 4. 의존성 및 빌드 재현성
+
+### 워크스페이스 정책
+
+루트 `package.json`이 다음 워크스페이스를 관리한다.
+
+```json
+{
+  "workspaces": ["apps/*", "packages/*"]
+}
+```
+
+`apps/*`와 `packages/*` 아래에 별도 lockfile을 만들지 않는다. 내부 패키지의 `file:` 참조와 외부 의존성 해석 결과를 루트 `package-lock.json`에 함께 기록한다.
+
+### npm 설정
+
+```ini
+package-lock=true
+lockfile-version=3
+save-exact=true
+```
+
+- lockfile 생성을 비활성화할 수 없다.
+- lockfile 포맷은 v3로 고정한다.
+- 새 직접 의존성은 정확한 버전으로 저장한다.
+
+### 설치 명령의 역할
+
+```text
+npm ci       lockfile과 정확히 일치하는 clean install
+npm install  의존성 추가·삭제·갱신과 lockfile 재생성
+```
+
+CI와 배포는 항상 `npm ci`를 사용한다. 일반 개발자가 의존성을 변경할 때만 루트에서 `npm install`을 실행하고, 수정된 `package.json`과 `package-lock.json`을 함께 커밋한다.
+
+### GitHub Actions
+
+CI와 Pages 빌드는 Node.js 24를 사용하며, `actions/setup-node`의 npm 캐시를 다음 키로 구성한다.
+
+```yaml
+with:
+  node-version: 24
+  cache: npm
+  cache-dependency-path: package-lock.json
+```
+
+설치와 검사는 다음 순서다.
+
+```text
+checkout
+→ Node.js 설정과 npm 캐시 복원
+→ npm ci
+→ TypeScript 타입 검사
+→ 단위·골든·불변식 테스트
+→ Vite 프로덕션 빌드
+```
+
+이 정책은 임시 PR의 clean runner에서 검증됐다.
+
+## 5. 전투 입력 모델
 
 현재 MVP의 단일 공격 그룹은 숫자 또는 `DiceExpression` 공격 횟수와 피해를 사용한다. 숫자 입력은 기존 호출부의 하위 호환성을 위해 유지한다.
 
@@ -149,7 +215,7 @@ interface BattleInput {
 
 후속 단계에서는 공격자, 방어자, 복수 공격 그룹, 전역 효과와 데이터 릴리스 ID를 포함하는 `BattleContext`로 확장한다.
 
-## 5. 공통 PMF 모델
+## 6. 공통 PMF 모델
 
 ```ts
 interface PmfEntry<T> {
@@ -172,9 +238,7 @@ interface PmfEntry<T> {
 
 원시값은 값 자체를 상태 키로 사용한다. 객체 상태는 명시적인 `PmfKeySelector`를 제공해야 한다.
 
-## 6. 계산 파이프라인
-
-현재 계산 파이프라인:
+## 7. 계산 파이프라인
 
 ```text
 무장의 모델당 공격 표현
@@ -204,8 +268,6 @@ interface PmfEntry<T> {
 
 ### 상처
 
-공격력과 내구도의 비교에 따라 상처 기준을 결정한다.
-
 - `S >= 2T`: 2+
 - `S > T`: 3+
 - `S = T`: 4+
@@ -222,7 +284,7 @@ interface PmfEntry<T> {
 
 ### 피해 PMF
 
-`damageAmountToPmf`는 숫자 또는 `DiceExpression` 피해를 `Pmf<number>`로 변환한다. 공개 결과는 다음 항목을 제공한다.
+`damageAmountToPmf`는 숫자 또는 `DiceExpression` 피해를 `Pmf<number>`로 변환한다.
 
 ```ts
 stageDistributions.damagePerFailedSave
@@ -233,8 +295,6 @@ stageBreakdown.expectedDamagePerFailedSave
 
 ### 피해 상태 전이
 
-방어 상태:
-
 ```ts
 interface DefenderDamageState {
   destroyedModels: number;
@@ -243,7 +303,7 @@ interface DefenderDamageState {
 }
 ```
 
-각 실패한 내성은 독립 피해 이벤트다. 상태 전이는 다음 순서로 처리한다.
+각 실패한 내성은 독립 피해 이벤트다.
 
 1. 현재 모델의 잔여 운드에서 피해 값을 뺀다.
 2. 잔여 운드가 양수면 같은 모델 상태를 유지한다.
@@ -259,9 +319,9 @@ interface DefenderDamageState {
 destroyedModels : currentModelRemainingWounds : unitDestroyed
 ```
 
-이 키를 사용해 서로 다른 피해 주사위 경로가 같은 방어 상태에 도달하면 확률을 병합한다.
+서로 다른 피해 주사위 경로가 같은 방어 상태에 도달하면 이 키로 확률을 병합한다.
 
-## 7. 계산 결과
+## 8. 계산 결과
 
 ```ts
 interface CalculationResult {
@@ -297,7 +357,7 @@ interface CalculationResult {
 
 정규분포를 가정하지 않으며 실제 이산 확률분포를 사용한다.
 
-## 8. 데이터 설계 방향
+## 9. 데이터 설계 방향
 
 모든 엔티티는 표시 이름과 분리된 고유 ID를 사용한다.
 
@@ -312,6 +372,27 @@ EffectDefinition
 DataRelease
 TranslationEntry
 ```
+
+다음 단계에서 현재 `apps/web/src/data/catalog.ts`의 책임을 분해한다.
+
+```text
+packages/game-data-schema/
+├─ src/types.ts
+├─ src/validation.ts
+└─ src/index.ts
+
+apps/web/src/data/
+├─ catalog.json
+├─ load-catalog.ts
+└─ catalog.test.ts
+```
+
+책임 분리 방향:
+
+- `Unit`: 편성 단위, 팩션, 모델 프로필 ID와 사용 가능한 무장 ID
+- `ModelProfile`: T, Sv, W, BS, WS와 기본 모델 수
+- `WeaponProfile`: 타입, A, S, AP, D와 선택적 명중 수치 재정의
+- `Ability`: 후속 규칙 효과 ID와 매개변수
 
 현재 샘플 `Weapon.attacks`는 `AttackCount`, `Weapon.damage`는 `DamageAmount`를 사용한다.
 
@@ -338,9 +419,7 @@ generated-data/
 
 브라우저는 작은 버전 파일을 먼저 확인하고 변경된 진영 청크만 내려받는다. 설치된 데이터는 IndexedDB에 저장한다.
 
-## 9. 데이터 갱신 도구
-
-로컬 CLI는 다음 파이프라인을 수행한다.
+## 10. 데이터 갱신 도구
 
 ```text
 원본 CSV/JSON/YAML 입력
@@ -355,11 +434,9 @@ generated-data/
 
 초기 명령 구조는 `validate`, `diff`, `build`, `test`, `release`를 목표로 한다.
 
-## 10. 테스트 설계
+## 11. 테스트 설계
 
 ### 단위·회귀 테스트
-
-`index.test.ts`, `pmf.test.ts`, `dice-expression.test.ts`는 개별 자료구조와 규칙을 검증한다.
 
 - PMF 정규화와 상태 병합
 - PMF 독립·조건부·반복 합성
@@ -375,29 +452,15 @@ generated-data/
 
 ### 골든 테스트
 
-`golden.test.ts`는 대표 전투 조합의 입력과 예상 결과를 고정한다.
-
-현재 케이스:
-
 - 고정 공격 + 고정 피해
 - D6 공격 + 고정 피해
 - 고정 공격 + D3 피해
 - 고정 공격 + D6 피해
 - D6 공격 + D6 피해
 
-고정 항목:
-
-- 단계별 기대값
-- 평균 유효 피해
-- 평균 파괴 모델 수
-- 전멸 확률
-- 최빈 방어 상태와 그 확률
-
-골든 수치는 독립적인 유리수 기반 교차 계산으로 검산한다.
+고정 항목은 단계별 기대값, 평균 유효 피해, 평균 파괴 모델 수, 전멸 확률과 최빈 방어 상태다.
 
 ### 불변식 테스트
-
-`invariants.test.ts`는 고정·가변 공격과 피해를 조합한 입력 매트릭스를 사용한다.
 
 - 모든 공개 확률은 유한한 0~1 범위
 - 모든 공개 분포의 확률 합은 1
@@ -413,28 +476,13 @@ generated-data/
 
 현재 테스트는 명시적 입력 매트릭스를 사용한다. 무작위 생성 기반 속성 테스트 프레임워크 도입은 후속 선택 사항이다.
 
-## 11. CI/CD와 설치 재현성
-
-`main` 변경과 Pull Request에서 다음 검사를 수행한다.
-
-```text
-의존성 설치
-→ TypeScript 타입 검사
-→ 단위·골든·불변식 테스트
-→ 웹 프로덕션 빌드
-```
-
-현재 CI는 `npm install`을 사용한다. 다음 단계에서는 lockfile을 확정하고 `npm ci` 기반의 재현 가능한 설치로 변경한다.
-
-후속 단계에서는 데이터 스키마 검증과 릴리스 manifest 검사를 추가한다.
-
 ## 12. 단계별 구현 계획
 
-1. **계산 코어**: PMF, 주사위 표현, 기본 전투 단계, 피해 할당
-2. **가변 공격·피해**: 가변 공격과 가변 피해 상태 전이
-3. **검증 강화**: 골든 테스트, 확률 불변식과 단조성 테스트
-4. **설치 재현성**: lockfile 정책과 `npm ci`
-5. **외부 데이터와 스키마**: 고유 ID, 런타임 검증, 진영별 JSON
+1. **계산 코어**: PMF, 주사위 표현, 기본 전투 단계, 피해 할당 — 완료
+2. **가변 공격·피해**: 가변 공격과 가변 피해 상태 전이 — 완료
+3. **검증 강화**: 골든 테스트, 확률 불변식과 단조성 테스트 — 완료
+4. **설치 재현성**: 루트 lockfile, `.npmrc`, `npm ci` — 완료
+5. **외부 데이터와 스키마**: 고유 ID, 런타임 검증, 외부 JSON — 다음 단계
 6. **릴리스와 로컬 저장**: manifest, IndexedDB, 버전 전환
 7. **데이터 갱신 도구와 배포**: validate/diff/build/test/release
 8. **규칙 확장**: 재굴림, 치명타, 피해 감소, Feel No Pain
@@ -455,13 +503,15 @@ generated-data/
 - 공격 및 피해 주사위 분포 UI
 - 대표 전투 골든 테스트
 - 확률·상태·결정성·단조성 불변식 테스트
+- 루트 npm lockfile과 `npm ci` 기반 CI·배포
 - 기본 명중·상처·내성·무적 내성
 - 다중 운드 모델 피해 할당
 - 평균 피해, 평균 파괴 모델 수, 최빈 상태, 전멸 확률
 
 아직 미구현:
 
-- 확정된 lockfile 및 `npm ci` 설치 정책
+- 정식 데이터 스키마와 외부 JSON
+- 런타임 데이터 검증
 - 재굴림, 치명타, 추가 명중
 - 피해 감소와 Feel No Pain
 - 복수 공격 그룹
