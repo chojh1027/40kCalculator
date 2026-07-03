@@ -244,32 +244,31 @@ export function App() {
   return (
     <main className="page-shell">
       <header className="hero">
-        <p className="eyebrow">WARHAMMER 40,000 · MVP</p>
-        <h1>Combat Probability Calculator</h1>
-        <p>
-          Calculates average damage and model-destruction probabilities by summing every possible outcome instead of running random simulations.
-        </p>
+        <p className="eyebrow">WARHAMMER 40,000</p>
+        <h1>다이스 서비터</h1>
       </header>
 
       <section className="layout" aria-label="Combat probability calculator">
         <form className="panel controls" onSubmit={(event) => event.preventDefault()}>
           <h2>Attacking Unit</h2>
-          <label>
-            Alliance
-            <select value={attackingAllianceId} onChange={(event) => handleAttackingAllianceChange(event.target.value)}>
-              {ALLIANCES.map((alliance) => (
-                <option key={alliance.id} value={alliance.id}>{alliance.name}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Faction
-            <select value={attackingFactionId} onChange={(event) => handleAttackingFactionChange(event.target.value)}>
-              {attackingFactions.map((faction) => (
-                <option key={faction.id} value={faction.id}>{faction.name}</option>
-              ))}
-            </select>
-          </label>
+          <div className="selector-row">
+            <label>
+              Alliance
+              <select value={attackingAllianceId} onChange={(event) => handleAttackingAllianceChange(event.target.value)}>
+                {ALLIANCES.map((alliance) => (
+                  <option key={alliance.id} value={alliance.id}>{alliance.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Faction
+              <select value={attackingFactionId} onChange={(event) => handleAttackingFactionChange(event.target.value)}>
+                {attackingFactions.map((faction) => (
+                  <option key={faction.id} value={faction.id}>{faction.name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           <label>
             Unit
             <select value={attackingUnit.id} onChange={(event) => handleAttackingUnitChange(event.target.value)}>
@@ -311,22 +310,24 @@ export function App() {
 
           <div className="control-section">
             <h2>Defending Unit</h2>
-            <label>
-              Alliance
-              <select value={defendingAllianceId} onChange={(event) => handleDefendingAllianceChange(event.target.value)}>
-                {ALLIANCES.map((alliance) => (
-                  <option key={alliance.id} value={alliance.id}>{alliance.name}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Faction
-              <select value={defendingFactionId} onChange={(event) => handleDefendingFactionChange(event.target.value)}>
-                {defendingFactions.map((faction) => (
-                  <option key={faction.id} value={faction.id}>{faction.name}</option>
-                ))}
-              </select>
-            </label>
+            <div className="selector-row">
+              <label>
+                Alliance
+                <select value={defendingAllianceId} onChange={(event) => handleDefendingAllianceChange(event.target.value)}>
+                  {ALLIANCES.map((alliance) => (
+                    <option key={alliance.id} value={alliance.id}>{alliance.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Faction
+                <select value={defendingFactionId} onChange={(event) => handleDefendingFactionChange(event.target.value)}>
+                  {defendingFactions.map((faction) => (
+                    <option key={faction.id} value={faction.id}>{faction.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <label>
               Unit
               <select value={defendingUnit.id} onChange={(event) => handleDefendingUnitChange(event.target.value)}>
@@ -369,9 +370,14 @@ export function App() {
           <div className="likely-result">
             <span>Most Likely Outcome</span>
             <strong>
-              {mostLikely.unitDestroyed
-                ? "Defending unit destroyed"
-                : `${modelLabel(mostLikely.destroyedModels)} destroyed + next model has ${mostLikely.currentModelRemainingWounds}W remaining`}
+              {mostLikely.unitDestroyed ? (
+                "Defending unit destroyed"
+              ) : (
+                <>
+                  <span>{modelLabel(mostLikely.destroyedModels)} destroyed</span>
+                  <span>Next model has {mostLikely.currentModelRemainingWounds}W remaining</span>
+                </>
+              )}
             </strong>
             <div className="outcome-meta">
               <span>Exact outcome chance: {percent(mostLikely.probability)}</span>
