@@ -21,7 +21,7 @@ React Web UI
        ├─ DiceExpression
        ├─ roll-rules.ts
        ├─ critical-hit-effects.ts
-       └─ battle pipeline
+       └─ battle and damage-allocation pipeline
 ```
 
 - `packages/calculator`: 순수 확률 계산
@@ -72,7 +72,6 @@ packages/calculator/src/
 ├─ dice-expression.ts
 ├─ roll-rules.ts
 ├─ critical-hit-effects.ts
-├─ damage-allocation.ts
 └─ *.test.ts
 
 packages/game-data-schema/src/
@@ -95,6 +94,8 @@ apps/web/src/
    ├─ result-view.ts
    └─ result-view.test.ts
 ```
+
+현재 전투 파이프라인과 non-spill 피해 할당은 `packages/calculator/src/index.ts`에서 조합된다.
 
 ## 4. 계산 엔진 입력
 
