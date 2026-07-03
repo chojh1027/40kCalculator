@@ -10,6 +10,6 @@ describe("battle input validation", () => {
         sides: 6,
         modifier: -2,
       }),
-    ).toThrow("attacks must produce an integer between 0 and 200.");
+    ).toThrow("Dice expression outcomes must be non-negative.");
   });
 });
