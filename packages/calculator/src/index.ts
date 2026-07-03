@@ -8,13 +8,14 @@ import { Pmf } from "./pmf";
 export type { DiceExpression } from "./dice-expression";
 
 export type AttackCount = number | DiceExpression;
+export type DamageAmount = number | DiceExpression;
 
 export interface BattleInput {
   attacks: AttackCount;
   skill: number;
   strength: number;
   armorPenetration: number;
-  damage: number;
+  damage: DamageAmount;
   targetToughness: number;
   targetSave: number;
   targetInvulnerableSave?: number;
@@ -57,6 +58,7 @@ export interface CalculationResult {
     hits: ValueProbability[];
     wounds: ValueProbability[];
     failedSaves: ValueProbability[];
+    damagePerFailedSave: ValueProbability[];
     effectiveDamage: ValueProbability[];
     destroyedModels: ValueProbability[];
   };
@@ -65,11 +67,13 @@ export interface CalculationResult {
     expectedHits: number;
     expectedWounds: number;
     expectedFailedSaves: number;
+    expectedDamagePerFailedSave: number;
     expectedFinalDamage: number;
   };
 }
 
 const MAX_ATTACK_COUNT = 200;
+const MAX_DAMAGE_AMOUNT = 30;
 
 function assertIntegerInRange(name: string, value: number, min: number, max: number): void {
   if (!Number.isInteger(value) || value < min || value > max) {
@@ -91,6 +95,22 @@ export function attackCountToPmf(attacks: AttackCount): Pmf<number> {
   }
 
   return diceExpressionToPmf(attacks);
+}
+
+export function damageAmountToPmf(damage: DamageAmount): Pmf<number> {
+  if (typeof damage === "number") {
+    assertIntegerInRange("damage", damage, 1, MAX_DAMAGE_AMOUNT);
+    return Pmf.certain(damage);
+  }
+
+  const bounds = diceExpressionBounds(damage);
+  if (bounds.minimum < 1 || bounds.maximum > MAX_DAMAGE_AMOUNT) {
+    throw new RangeError(
+      `damage must produce an integer between 1 and ${MAX_DAMAGE_AMOUNT}.`,
+    );
+  }
+
+  return diceExpressionToPmf(damage);
 }
 
 export function repeatAttackCount(attacks: AttackCount, repetitions: number): AttackCount {
@@ -129,7 +149,6 @@ function validateInput(input: BattleInput): void {
   assertIntegerInRange("skill", input.skill, 2, 6);
   assertIntegerInRange("strength", input.strength, 1, 30);
   assertIntegerInRange("armorPenetration", input.armorPenetration, -6, 0);
-  assertIntegerInRange("damage", input.damage, 1, 30);
   assertIntegerInRange("targetToughness", input.targetToughness, 1, 30);
   assertIntegerInRange("targetSave", input.targetSave, 2, 7);
   assertIntegerInRange("targetWounds", input.targetWounds, 1, 100);
@@ -195,36 +214,113 @@ function toValueDistribution(distribution: Pmf<number>): ValueProbability[] {
     .sort((left, right) => left.value - right.value);
 }
 
+function stateKey(state: DefenderDamageState): string {
+  return `${state.destroyedModels}:${state.currentModelRemainingWounds}:${state.unitDestroyed ? 1 : 0}`;
+}
+
+function initialDamageState(targetWounds: number): DefenderDamageState {
+  return {
+    destroyedModels: 0,
+    currentModelRemainingWounds: targetWounds,
+    unitDestroyed: false,
+  };
+}
+
+export function applyDamageEvent(
+  state: DefenderDamageState,
+  damage: number,
+  targetWounds: number,
+  targetModelCount: number,
+): DefenderDamageState {
+  assertIntegerInRange("damage event", damage, 1, MAX_DAMAGE_AMOUNT);
+  if (state.unitDestroyed) return state;
+
+  const remainingWounds = state.currentModelRemainingWounds - damage;
+  if (remainingWounds > 0) {
+    return {
+      ...state,
+      currentModelRemainingWounds: remainingWounds,
+    };
+  }
+
+  const destroyedModels = state.destroyedModels + 1;
+  const unitDestroyed = destroyedModels >= targetModelCount;
+  return {
+    destroyedModels,
+    currentModelRemainingWounds: unitDestroyed ? 0 : targetWounds,
+    unitDestroyed,
+  };
+}
+
+function buildDamageAllocationPmfs(
+  maximumEvents: number,
+  damage: Pmf<number>,
+  targetWounds: number,
+  targetModelCount: number,
+): Pmf<DefenderDamageState>[] {
+  const allocations: Pmf<DefenderDamageState>[] = [
+    Pmf.certain(initialDamageState(targetWounds), stateKey),
+  ];
+
+  for (let eventCount = 1; eventCount <= maximumEvents; eventCount += 1) {
+    const previous = allocations[eventCount - 1];
+    if (!previous) throw new Error("Previous damage allocation PMF is missing.");
+
+    allocations.push(
+      previous.flatMap(
+        (state) =>
+          damage.map(
+            (damageValue) =>
+              applyDamageEvent(state, damageValue, targetWounds, targetModelCount),
+            stateKey,
+          ),
+        stateKey,
+      ),
+    );
+  }
+
+  return allocations;
+}
+
+export function allocateDamagePmf(
+  unsavedAttacks: number,
+  damage: DamageAmount,
+  targetWounds: number,
+  targetModelCount: number,
+): Pmf<DefenderDamageState> {
+  assertIntegerInRange("unsaved attacks", unsavedAttacks, 0, MAX_ATTACK_COUNT);
+  assertIntegerInRange("targetWounds", targetWounds, 1, 100);
+  assertIntegerInRange("targetModelCount", targetModelCount, 1, 100);
+
+  const damageDistribution = damageAmountToPmf(damage);
+  const allocations = buildDamageAllocationPmfs(
+    unsavedAttacks,
+    damageDistribution,
+    targetWounds,
+    targetModelCount,
+  );
+  const result = allocations[unsavedAttacks];
+  if (!result) throw new Error("Damage allocation PMF is missing.");
+  return result;
+}
+
 export function allocateFixedDamage(
   unsavedAttacks: number,
   damage: number,
   targetWounds: number,
   targetModelCount: number,
 ): DefenderDamageState {
-  let destroyedModels = 0;
-  let remainingWounds = targetWounds;
-
-  for (let attack = 0; attack < unsavedAttacks && destroyedModels < targetModelCount; attack += 1) {
-    remainingWounds -= damage;
-    if (remainingWounds <= 0) {
-      destroyedModels += 1;
-      remainingWounds = destroyedModels === targetModelCount ? 0 : targetWounds;
-    }
-  }
-
-  return {
-    destroyedModels,
-    currentModelRemainingWounds: remainingWounds,
-    unitDestroyed: destroyedModels === targetModelCount,
-  };
-}
-
-function stateKey(state: DefenderDamageState): string {
-  return `${state.destroyedModels}:${state.currentModelRemainingWounds}:${state.unitDestroyed ? 1 : 0}`;
+  return allocateDamagePmf(
+    unsavedAttacks,
+    damage,
+    targetWounds,
+    targetModelCount,
+  ).mode().value;
 }
 
 export function calculateBattle(input: BattleInput): CalculationResult {
   const attacks = attackCountToPmf(input.attacks);
+  const damage = damageAmountToPmf(input.damage);
   validateInput(input);
 
   const hitProbability = rollSuccessProbability(input.skill);
@@ -245,14 +341,23 @@ export function calculateBattle(input: BattleInput): CalculationResult {
   const failedSaves = attacks.flatMap((attackCount) =>
     binomialPmf(attackCount, unsavedAttackProbability),
   );
-  const outcomes = failedSaves.map(
-    (unsavedAttacks) =>
-      allocateFixedDamage(
-        unsavedAttacks,
-        input.damage,
-        input.targetWounds,
-        input.targetModelCount,
-      ),
+
+  const maximumFailedSaves = failedSaves.entries.reduce(
+    (maximum, entry) => Math.max(maximum, entry.value),
+    0,
+  );
+  const damageAllocations = buildDamageAllocationPmfs(
+    maximumFailedSaves,
+    damage,
+    input.targetWounds,
+    input.targetModelCount,
+  );
+  const outcomes = failedSaves.flatMap(
+    (unsavedAttacks) => {
+      const allocation = damageAllocations[unsavedAttacks];
+      if (!allocation) throw new Error("Damage allocation PMF is missing.");
+      return allocation;
+    },
     stateKey,
   );
 
@@ -296,6 +401,7 @@ export function calculateBattle(input: BattleInput): CalculationResult {
   const effectiveDamageDistribution = outcomes.map(effectiveDamage);
   const destroyedModelsDistribution = outcomes.map((outcome) => outcome.destroyedModels);
   const expectedAttacks = attacks.expectation((attackCount) => attackCount);
+  const expectedDamagePerFailedSave = damage.expectation((damageValue) => damageValue);
 
   return {
     summary: {
@@ -311,6 +417,7 @@ export function calculateBattle(input: BattleInput): CalculationResult {
       hits: toValueDistribution(hits),
       wounds: toValueDistribution(wounds),
       failedSaves: toValueDistribution(failedSaves),
+      damagePerFailedSave: toValueDistribution(damage),
       effectiveDamage: toValueDistribution(effectiveDamageDistribution),
       destroyedModels: toValueDistribution(destroyedModelsDistribution),
     },
@@ -319,6 +426,7 @@ export function calculateBattle(input: BattleInput): CalculationResult {
       expectedHits: expectedAttacks * hitProbability,
       expectedWounds: expectedAttacks * woundFromAttackProbability,
       expectedFailedSaves: expectedAttacks * unsavedAttackProbability,
+      expectedDamagePerFailedSave,
       expectedFinalDamage: expectedEffectiveDamage,
     },
   };
