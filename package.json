@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "npm --workspace @40k-calculator/web run dev",
     "build": "npm --workspace @40k-calculator/web run build",
-    "test": "npm --workspace @40k-calculator/calculator run test",
+    "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check": "npm run typecheck && npm run test && npm run build"
   },
