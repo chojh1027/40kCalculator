@@ -1,8 +1,9 @@
-# 워해머 40K 전투 확률 계산기 기술 설계서
+# Dice Servitor 기술 설계서
 
-- 문서 상태: v0.1
-- 관련 문서: [`proposal.md`](./proposal.md)
-- 목적: 프로포절의 구현 방향을 실제 개발 가능한 구조와 규칙으로 구체화한다.
+- 문서 상태: v0.2
+- 기준일: 2026-07-03
+- 관련 문서: [`proposal.md`](./proposal.md), [`roadmap.md`](./roadmap.md), [`development-guide.md`](./development-guide.md)
+- 목적: 제품 목표를 실제 개발 가능한 계산·데이터·배포 구조로 구체화한다.
 
 ## 1. 설계 범위
 
@@ -11,6 +12,7 @@
 - React 기반 정적 웹 애플리케이션
 - TypeScript 기반 전투 확률 계산 엔진
 - 실제 이산 확률분포 계산
+- 공통 PMF 자료구조와 주사위 표현
 - 데이터 주도형 유닛·무장·효과 모델
 - 향후 IndexedDB 기반 로컬 데이터 저장
 - 진영별 데이터 청크와 불변 릴리스
@@ -18,7 +20,7 @@
 - GitHub Actions 기반 검사와 정적 배포
 - 한국어와 영어를 시작으로 하는 다국어 확장 구조
 
-초기 범위에서 사용자 계정, 서버 데이터베이스, 클라우드 동기화, 관리자 웹 편집기, 모든 특수 규칙의 완전 지원은 제외한다.
+초기 범위에서 사용자 계정, 서버 데이터베이스, 클라우드 동기화, 관리자 웹 편집기와 모든 특수 규칙의 완전 지원은 제외한다.
 
 ## 2. 핵심 설계 원칙
 
@@ -28,7 +30,11 @@
 
 ### 계산 엔진과 UI 분리
 
-계산 엔진은 React, DOM, IndexedDB에 직접 의존하지 않는 순수 TypeScript 모듈로 구현한다. 동일한 입력에는 항상 동일한 결과를 반환한다.
+계산 엔진은 React, DOM과 IndexedDB에 직접 의존하지 않는 순수 TypeScript 모듈로 구현한다. 동일한 입력에는 항상 동일한 결과를 반환한다.
+
+### 실제 이산 확률분포
+
+가변 주사위도 단일 난수 표본으로 처리하지 않는다. 가능한 모든 결과와 확률을 PMF로 만들어 다음 계산 단계에 전달한다.
 
 ### 데이터 주도형 설계
 
@@ -36,31 +42,46 @@
 
 ### 선언형 규칙
 
-게임 데이터에서 임의 JavaScript를 실행하지 않는다. 특수 규칙은 등록된 효과 종류와 매개변수로 표현하고 실제 동작은 계산 엔진 내부의 처리기가 담당한다.
+게임 데이터에서 임의 JavaScript를 실행하지 않는다. 특수 규칙은 등록된 효과 종류와 매개변수로 표현하고 실제 동작은 계산 엔진 내부 처리기가 담당한다.
 
 ### 불변 데이터 릴리스
 
-이미 배포된 데이터 릴리스는 수정하거나 덮어쓰지 않는다. 오류 수정도 새 릴리스 ID로 배포하여 과거 계산의 재현성과 롤백 가능성을 유지한다.
+이미 배포된 데이터 릴리스는 수정하거나 덮어쓰지 않는다. 오류 수정도 새 릴리스 ID로 배포해 과거 계산의 재현성과 롤백 가능성을 유지한다.
 
 ## 3. 저장소 구조
 
 ```text
 40kCalculator/
 ├─ apps/
-│  └─ web/                    React + Vite 웹 애플리케이션
+│  └─ web/                         React + Vite 웹 애플리케이션
 ├─ packages/
-│  ├─ calculator/             UI와 독립된 계산 엔진
-│  ├─ game-data-schema/       후속 단계: 타입과 런타임 검증
-│  └─ data-tool/              후속 단계: 데이터 갱신 CLI
-├─ data-source/               후속 단계: 원본 CSV/YAML
-├─ generated-data/            후속 단계: 릴리스와 진영별 청크
+│  ├─ calculator/                  UI와 독립된 계산 엔진
+│  │  └─ src/
+│  │     ├─ index.ts               현재 기본 전투 계산
+│  │     ├─ pmf.ts                 공통 확률질량함수
+│  │     └─ dice-expression.ts     고정·가변 주사위 표현
+│  ├─ game-data-schema/            후속 단계: 타입과 런타임 검증
+│  └─ data-tool/                   후속 단계: 데이터 갱신 CLI
+├─ data-source/                    후속 단계: 원본 CSV/YAML
+├─ generated-data/                 후속 단계: 릴리스와 진영별 청크
 ├─ docs/
 └─ .github/workflows/
 ```
 
+계산 패키지는 다음 하위 경로를 공개한다.
+
+```ts
+import { Pmf } from "@40k-calculator/calculator/pmf";
+import {
+  diceExpressionBounds,
+  diceExpressionToPmf,
+  validateDiceExpression,
+} from "@40k-calculator/calculator/dice-expression";
+```
+
 ## 4. 전투 입력 모델
 
-초기 MVP의 단일 공격 그룹 입력은 다음 값을 사용한다.
+현재 MVP의 단일 공격 그룹 입력은 고정 정수를 사용한다.
 
 ```ts
 interface BattleInput {
@@ -77,19 +98,104 @@ interface BattleInput {
 }
 ```
 
-후속 단계에서는 공격자, 방어자, 복수 공격 그룹, 전역 효과, 데이터 릴리스 ID를 포함하는 `BattleContext`로 확장한다.
+다음 단계에서 공격 횟수와 피해를 `DiceExpression`으로 확장한다.
 
-## 5. 계산 파이프라인
+```ts
+interface FixedDiceExpression {
+  kind: "fixed";
+  value: number;
+}
+
+interface RolledDiceExpression {
+  kind: "dice";
+  count: number;
+  sides: number;
+  modifier?: number;
+}
+
+type DiceExpression = FixedDiceExpression | RolledDiceExpression;
+```
+
+표현 예시:
+
+```ts
+const fixedFour: DiceExpression = { kind: "fixed", value: 4 };
+const d3: DiceExpression = { kind: "dice", count: 1, sides: 3 };
+const d6: DiceExpression = { kind: "dice", count: 1, sides: 6 };
+const twoD6PlusOne: DiceExpression = {
+  kind: "dice",
+  count: 2,
+  sides: 6,
+  modifier: 1,
+};
+```
+
+### 주사위 표현 불변식
+
+- 고정값은 0 이상의 안전한 정수다.
+- 주사위 개수는 1~100이다.
+- 주사위 면 수는 2~100이다.
+- 보정치는 안전한 정수다.
+- 가능한 최솟값이 0보다 작아지는 표현은 허용하지 않는다.
+- 공격 횟수와 피해량의 의미별 최소값은 해당 입력 단계가 추가로 검증한다.
+
+`diceExpressionBounds`는 가능한 최솟값과 최댓값을 반환한다. `diceExpressionToPmf`는 표현을 정확한 `Pmf<number>`로 변환한다.
+
+후속 단계에서는 공격자, 방어자, 복수 공격 그룹, 전역 효과와 데이터 릴리스 ID를 포함하는 `BattleContext`로 확장한다.
+
+## 5. 공통 PMF 모델
+
+```ts
+interface PmfEntry<T> {
+  value: T;
+  probability: number;
+}
+```
+
+`Pmf<T>`는 다음 연산을 제공한다.
+
+- 생성과 자동 정규화
+- 동일 상태 병합
+- 값 변환 `map`
+- 조건부 합성 `flatMap`
+- 독립 분포 결합 `combine`
+- 동일 분포 반복 `repeat`
+- 기대값 `expectation`
+- 최빈값 `mode`
+- 조건 확률 `probabilityOf`
+
+원시값은 값 자체를 상태 키로 사용한다. 객체 상태는 명시적인 `PmfKeySelector`를 제공해야 한다.
+
+주사위 분포는 한 개의 균등분포를 만든 뒤 `repeat`로 합성한다. 예를 들어 `2D6+1`은 초기 누적값 1에서 D6 분포를 두 번 더한다.
+
+## 6. 계산 파이프라인
+
+현재 고정값 계산:
 
 ```text
 입력 검증
-→ 공격 횟수
+→ 고정 공격 횟수
 → 명중 확률
 → 상처 확률
 → 내성 실패 확률
 → 실패한 내성 개수의 이항분포
-→ 공격별 피해 적용
+→ 고정 피해 적용
 → 모델별 피해 할당
+→ 동일 상태 확률 병합
+→ 결과 요약
+```
+
+가변 공격 통합 후 목표 파이프라인:
+
+```text
+입력 검증
+→ 공격 횟수 DiceExpression을 PMF로 변환
+→ 공격 횟수별 명중 분포 계산
+→ 동일 명중 결과 병합
+→ 상처 분포
+→ 내성 실패 분포
+→ 공격별 피해 DiceExpression을 PMF로 변환
+→ 모델별 피해 상태 전이
 → 동일 상태 확률 병합
 → 결과 요약
 ```
@@ -97,6 +203,8 @@ interface BattleInput {
 ### 명중
 
 명중 수치는 2+부터 6+까지 지원한다. 자연 1은 항상 실패하므로 성공 확률은 `(7 - 필요 눈) / 6`이다.
+
+가변 공격 횟수는 각 공격 횟수 결과에 조건부 이항분포를 적용하고 `flatMap`으로 합성한다.
 
 ### 상처
 
@@ -116,8 +224,6 @@ interface BattleInput {
 
 일반 공격의 초과 피해는 다음 모델로 전달하지 않는다. 각 실패한 내성은 독립적인 피해 이벤트이며, 이미 피해를 입은 모델에 다음 피해 이벤트를 순서대로 적용한다.
 
-방어 상태는 다음 값으로 표현한다.
-
 ```ts
 interface DefenderDamageState {
   destroyedModels: number;
@@ -126,20 +232,21 @@ interface DefenderDamageState {
 }
 ```
 
-동일한 상태에 도달하는 계산 경로의 확률은 하나로 병합한다.
+가변 피해는 실패한 내성마다 피해 PMF를 적용해야 한다. 동일한 방어 상태에 도달하는 경로는 상태 키를 사용해 병합한다.
 
-## 6. 계산 결과
+## 7. 계산 결과
 
 ```ts
 interface CalculationResult {
   summary: {
     expectedEffectiveDamage: number;
     expectedDestroyedModels: number;
-    mostLikelyOutcome: DefenderDamageState;
+    mostLikelyOutcome: OutcomeProbability;
     unitDestroyedProbability: number;
   };
   outcomeDistribution: OutcomeProbability[];
   destroyedModelDistribution: DestroyedModelProbability[];
+  stageDistributions: StageDistributions;
   stageBreakdown: StageBreakdown;
 }
 ```
@@ -152,15 +259,16 @@ interface CalculationResult {
 - 방어 유닛 전멸 확률
 - 정확히 N개 모델을 파괴할 확률
 - N개 이상 모델을 파괴할 누적 확률
-- 단계별 기대 공격·명중·상처·실패 내성 수
+- 단계별 공격·명중·상처·실패 내성 분포와 기대값
 
 정규분포를 가정하지 않으며 실제 이산 확률분포를 사용한다.
 
-## 7. 데이터 설계 방향
+## 8. 데이터 설계 방향
 
 모든 엔티티는 표시 이름과 분리된 고유 ID를 사용한다.
 
 ```text
+Alliance
 Faction
 Unit
 ModelProfile
@@ -171,9 +279,9 @@ DataRelease
 TranslationEntry
 ```
 
-게임 데이터에는 출처, 규칙 버전, 적용 시작일, 마지막 수정일을 기록한다. 데이터는 공통 규칙과 진영별 청크로 분할한다.
+게임 데이터에는 출처, 규칙 버전, 적용 시작일과 마지막 수정일을 기록한다. 데이터는 공통 규칙과 진영별 청크로 분할한다.
 
-향후 릴리스 구조 예시는 다음과 같다.
+향후 릴리스 구조:
 
 ```text
 generated-data/
@@ -187,7 +295,7 @@ generated-data/
 
 브라우저는 작은 버전 파일을 먼저 확인하고 변경된 진영 청크만 내려받는다. 설치된 데이터는 IndexedDB에 저장한다.
 
-## 8. 데이터 갱신 도구
+## 9. 데이터 갱신 도구
 
 로컬 CLI는 다음 파이프라인을 수행한다.
 
@@ -202,14 +310,17 @@ generated-data/
 → 대표 계산 회귀 테스트
 ```
 
-초기 명령 구조는 `validate`, `diff`, `build`, `release`를 목표로 한다.
+초기 명령 구조는 `validate`, `diff`, `build`, `test`, `release`를 목표로 한다.
 
-## 9. 테스트 전략
+## 10. 테스트 전략
 
 ### 단위 테스트
 
+- PMF 정규화와 상태 병합
+- PMF 독립·조건부·반복 합성
+- 고정값, D3와 D6 분포
+- 복수 주사위와 보정치 분포
 - 명중·상처·내성 확률
-- 이항분포의 확률 합
 - 일반 피해의 초과 피해 비전달
 - 다중 운드 모델 피해 할당
 - 동일 입력의 결정성
@@ -223,11 +334,12 @@ generated-data/
 
 - 모든 확률은 0 이상 1 이하
 - 전체 확률 합은 1
+- 표현의 모든 결과는 선언된 최소·최대 범위 안에 있음
 - 공격 수가 0이면 피해도 0
 - 방어 내성이 개선되면 평균 피해가 증가하지 않음
 - 방어 모델 수가 증가하면 전멸 확률이 증가하지 않음
 
-## 10. CI/CD
+## 11. CI/CD
 
 Pull Request와 `main` 변경 시 다음 검사를 수행한다.
 
@@ -238,30 +350,39 @@ Pull Request와 `main` 변경 시 다음 검사를 수행한다.
 → 웹 프로덕션 빌드
 ```
 
-후속 단계에서는 데이터 스키마 검증, 골든 테스트, 릴리스 manifest 검사를 추가한다.
+후속 단계에서는 데이터 스키마 검증, 골든 테스트와 릴리스 manifest 검사를 추가한다.
 
-## 11. 단계별 구현 계획
+## 12. 단계별 구현 계획
 
-1. **계산 코어**: PMF, 기본 전투 단계, 고정 피해, 다중 운드 할당
-2. **기본 웹 UI**: 프리셋 선택, 결과 요약, 확률 막대그래프
-3. **외부 데이터와 스키마**: 고유 ID, Zod 검증, 진영별 JSON
-4. **릴리스와 로컬 저장**: manifest, IndexedDB, 버전 전환
-5. **데이터 갱신 도구와 배포**: validate/diff/build/release, 정적 배포
-6. **규칙 확장**: 재굴림, 치명타, 가변 피해, 피해 감소, Feel No Pain
-7. **다국어 및 사용성**: 한국어·영어 리소스, 검색, 프리셋과 공유 링크
+1. **계산 코어**: PMF, 주사위 표현, 기본 전투 단계, 피해 할당
+2. **가변 공격·피해**: `DiceExpression`을 전투 파이프라인에 통합
+3. **기본 웹 UI**: 프리셋 선택, 결과 요약, 확률 막대그래프
+4. **외부 데이터와 스키마**: 고유 ID, 런타임 검증, 진영별 JSON
+5. **릴리스와 로컬 저장**: manifest, IndexedDB, 버전 전환
+6. **데이터 갱신 도구와 배포**: validate/diff/build/test/release
+7. **규칙 확장**: 재굴림, 치명타, 피해 감소, Feel No Pain
+8. **다국어 및 사용성**: 한국어·영어 리소스, 검색, 프리셋과 공유 링크
 
-## 12. 현재 MVP 완료 범위
+## 13. 현재 구현 범위
 
-현재 구현은 다음을 지원한다.
+구현됨:
 
 - UI와 분리된 TypeScript 계산 엔진
-- 단일 공격 그룹
-- 고정 공격 횟수와 고정 피해
+- 공통 `Pmf<T>` 자료구조
+- `DiceExpression` 타입, 범위 검증과 PMF 변환
+- 고정값, D3, D6와 복수 주사위 분포
+- 단일 공격 그룹의 고정 공격 횟수와 고정 피해
 - 기본 명중·상처·내성·무적 내성
 - 일반 피해의 non-spill 처리
 - 다중 운드 모델 피해 할당
 - 평균 피해, 평균 파괴 모델 수, 최빈 상태, 전멸 확률
 - 모델 파괴 이산 확률분포
-- 단위 테스트와 프로덕션 빌드
+- 단위 테스트와 프로덕션 빌드 구성
 
-재굴림, 치명타, 추가 명중, 가변 주사위, 피해 감소, Feel No Pain, 복수 공격 그룹은 후속 단계에서 추가한다.
+아직 미구현:
+
+- `DiceExpression`과 실제 공격 횟수·피해 계산의 연결
+- 재굴림, 치명타, 추가 명중
+- 피해 감소와 Feel No Pain
+- 복수 공격 그룹
+- 외부 데이터 릴리스와 IndexedDB
