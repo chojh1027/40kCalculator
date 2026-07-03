@@ -1,6 +1,6 @@
 # Dice Servitor 개발 지침 및 진행 현황
 
-- 문서 상태: v0.13
+- 문서 상태: v0.14
 - 기준일: 2026-07-03
 - 대상 저장소: `chojh1027/40kCalculator`
 - 관련 문서: [프로젝트 프로포절](./proposal.md), [기술 설계서](./technical-design.md), [개발 로드맵](./roadmap.md)
@@ -22,15 +22,17 @@
 
 - `packages/calculator`: 순수 전투 확률 계산
 - `packages/game-data-schema`: 데이터 타입과 런타임 검증
-- `apps/web/src/data`: 카탈로그 로딩과 Ability 규칙 해석
-- `apps/web`: 사용자 입력과 결과 표시
+- `apps/web/src/data/ability-rules.ts`: Ability 규칙 해석
+- `apps/web/src/data/result-view.ts`: 계산 결과의 UI 표시 정책
+- `apps/web/src/DetailedResults.tsx`: 상세 결과 렌더링
+- `apps/web/src/App.tsx`: 사용자 입력과 화면 조합
 
-### 데이터 규칙
+### 데이터와 UI 분리
 
 - 게임 데이터에는 임의 JavaScript를 넣지 않는다.
-- 계산 가능한 규칙은 선언형 discriminated union으로 저장한다.
 - UI 컴포넌트가 Ability ID별 하드코딩을 갖지 않는다.
-- Unit과 Weapon의 참조는 ID로만 연결한다.
+- 계산 결과 표시 순서와 조건은 React 컴포넌트 밖의 순수 함수에서 결정한다.
+- 계산 엔진의 결과를 UI 편의를 위해 다시 계산하지 않는다.
 
 ---
 
@@ -45,75 +47,27 @@ type AbilityEffect =
   | { readonly kind: "lethal-hits" };
 ```
 
-```ts
-interface Ability {
-  readonly id: string;
-  readonly name: string;
-  readonly description?: string;
-  readonly effects: readonly AbilityEffect[];
-}
-```
+검증 범위:
 
-기존 JSON의 `effects` 생략은 빈 배열로 해석한다.
+- 재굴림 정책은 `none`, `ones`, `failures`
+- Critical Hit 임계값은 `2~6`
+- Sustained Hits 결과 범위는 `0~6`
+- 미지원 효과와 필드는 거부
+- `effects` 생략은 빈 배열로 호환
 
-### 검증 범위
+합성 정책:
 
-- `kind`는 등록된 효과만 허용한다.
-- 재굴림 정책은 `none`, `ones`, `failures`만 허용한다.
-- Critical Hit 임계값은 `2~6`이다.
-- Sustained Hits 결과 범위는 `0~6`이다.
-- 효과 객체의 미지원 필드는 거부한다.
-- 파싱 결과와 효과 배열은 동결한다.
+- Unit Ability 이후 Weapon Ability 순서
+- 중복 Ability ID 한 번만 적용
+- 재굴림은 가장 강한 정책
+- Critical Hit은 가장 낮은 임계값
+- Lethal Hits는 논리 OR
+- 동일 Sustained Hits 중복 허용
+- 상충 Sustained Hits 오류 처리
 
 ---
 
-## 3. Ability 해석 계층
-
-처리 흐름:
-
-```text
-Unit abilityIds
-+ Weapon abilityIds
-→ 중복 ID 제거
-→ Ability lookup
-→ effects 순회
-→ 합성된 계산 규칙
-→ BattleInput
-```
-
-해석 함수는 `apps/web/src/data/ability-rules.ts`에 둔다.
-
-### 합성 정책
-
-#### 재굴림
-
-```text
-none < ones < failures
-```
-
-같은 단계의 재굴림 효과가 여러 개면 가장 강한 정책 하나만 적용한다.
-
-#### Critical Hit 임계값
-
-가장 낮은 값을 적용한다.
-
-#### Lethal Hits
-
-하나라도 존재하면 `true`다.
-
-#### Sustained Hits
-
-- 동일한 값은 중복 허용한다.
-- 서로 다른 값은 자동 선택하지 않고 충돌 오류로 처리한다.
-- 고정값과 동등한 `fixed` 표현은 같은 값으로 취급한다.
-
-#### 중복 Ability
-
-Unit과 Weapon이 같은 Ability ID를 참조하면 한 번만 적용한다.
-
----
-
-## 4. 계산 규칙 지침
+## 3. 계산 규칙 지침
 
 ### 재굴림
 
@@ -139,12 +93,65 @@ Unit과 Weapon이 같은 Ability ID를 참조하면 한 번만 적용한다.
 
 ---
 
-## 5. 계산 결과 지침
+## 4. 상세 결과 UI 지침
 
-공개 결과:
+결과 표시 모델은 `buildResultStageGroups`에서 생성한다.
 
 ```text
-hitOutcomeDistribution
+Attacks
+Hit Resolution
+├─ Normal Hits
+├─ Critical Hits
+├─ Sustained Hits
+└─ Total Hits
+
+Wound Resolution
+├─ Wound Rolls
+├─ Automatic Wounds
+└─ Total Wounds
+
+Saves and Damage
+├─ Failed Saves
+├─ Damage per Failed Save
+├─ Effective Damage
+└─ Models Destroyed
+```
+
+### 표시 규칙
+
+- Normal Hits와 Critical Hits는 항상 분리한다.
+- Total Hits는 규칙 적용 후 총 명중을 의미한다.
+- Sustained Hits 단계는 해당 규칙이 활성일 때만 표시한다.
+- Automatic Wounds 단계는 Lethal Hits가 활성일 때만 표시한다.
+- Wound Rolls와 Total Wounds를 구분한다.
+- 각 단계는 평균값과 전체 확률분포를 제공한다.
+- 모든 단계는 기본적으로 접힌 카드로 표시한다.
+- 그룹 제목은 공격, 명중, 상처, 피해 흐름을 반영한다.
+
+### Applied Rules
+
+결과 상단에 실제 적용 규칙을 표시한다.
+
+- Hit 재굴림
+- Critical Hits 임계값
+- Sustained Hits 값
+- Lethal Hits
+- Wound 재굴림
+
+비활성 재굴림은 표시하지 않는다. 기본 Critical Hits 6+는 항상 표시한다.
+
+### 접근성과 모바일
+
+- 확률 막대에 `aria-label`을 제공한다.
+- 결과 그룹 제목과 섹션을 `aria-labelledby`로 연결한다.
+- 작은 화면에서 라벨 열 폭을 줄인다.
+- 카드 접기 구조를 유지해 긴 결과를 제어한다.
+
+---
+
+## 5. 공개 계산 결과 지침
+
+```text
 stageDistributions.normalHits
 stageDistributions.criticalHits
 stageDistributions.sustainedHits
@@ -164,49 +171,39 @@ stageBreakdown.expectedAutomaticWounds
 stageBreakdown.expectedWounds
 ```
 
-`hits`는 Sustained Hits까지 적용된 총 명중 수다. `wounds`는 상처 굴림 성공과 자동 상처를 합친 값이다.
+`hits`는 Sustained Hits까지 포함한 총 명중이다. `wounds`는 굴림 성공 상처와 자동 상처의 합이다.
 
 ---
 
 ## 6. 테스트 지침
 
-### 스키마 테스트
+### 계산과 스키마
 
-`packages/game-data-schema/src/validation.test.ts`:
-
-- 모든 Ability 효과 종류 파싱
-- 효과 없는 기존 Ability 호환
-- 잘못된 kind와 정책 거부
-- Critical Hit 임계값 범위
-- Sustained Hits 결과 범위
-- 효과 배열 동결
-
-### 합성 테스트
-
-`apps/web/src/data/ability-rules.test.ts`:
-
-- Unit·Weapon 효과 수집 순서
-- 중복 Ability ID 제거
-- 재굴림 강도 선택
-- Critical Hit 임계값 선택
-- Lethal Hits 합성
-- 동일 Sustained Hits 허용
-- 상충 Sustained Hits 거부
-- 누락 Ability 거부
-- 실제 샘플 카탈로그 연결
-
-### 회귀 테스트
-
-- 기존 계산기 골든 테스트
+- 골든 테스트
 - 공개 분포 정규화
-- 실제 JSON 전체 참조 검증
-- 웹 프로덕션 빌드
+- Ability 효과 종류와 범위
+- Unit·Weapon 효과 합성
+- 기존 규칙 미적용 결과 회귀 방지
 
-검사 명령:
+### 상세 결과 표시
+
+`apps/web/src/data/result-view.test.ts`:
+
+- 일반, Critical, 총 명중 단계 항상 표시
+- Sustained Hits 조건부 표시
+- Automatic Wounds 조건부 표시
+- 재굴림과 Critical 임계값 라벨
+- 기본 Critical Hits 6+ 라벨
+- 고정·가변 Sustained Hits 문자열
+- 단계 순서 안정성
+
+### 검사 명령
 
 ```bash
 npm run check
 ```
+
+타입 검사, 모든 테스트와 웹 프로덕션 빌드가 포함된다.
 
 ---
 
@@ -234,34 +231,37 @@ npm run check
 | 효과 런타임 검증 | ✅ | 종류·필드·범위 |
 | Unit·Weapon 효과 합성 | ✅ | 별도 순수 함수 |
 | 외부 JSON | ✅ | 샘플 Ability 데이터 |
-| manifest·IndexedDB | ⬜ | 후속 단계 |
+| manifest·IndexedDB | ⬜ | 다음 단계 |
 
 ### UI
 
 | 항목 | 상태 | 현재 내용 |
 |---|---:|---|
 | 활성 Ability 이름 | ✅ | Unit·Weapon 합성 결과 |
-| Ability 계산 적용 | ✅ | `BattleInput` 연결 |
-| 규칙별 상세 결과 | ⬜ | 다음 단계 |
+| Applied Rules | ✅ | 실제 적용 규칙 태그 |
+| 상세 명중 결과 | ✅ | 일반·Critical·Sustained·총 명중 |
+| 상세 상처 결과 | ✅ | 굴림 수·자동 상처·총 상처 |
+| 확률분포 접기 카드 | ✅ | 단계별 전체 분포 |
+| 전체 최종 상태 분포 UI | ⬜ | 후속 단계 |
 
 ---
 
 ## 8. 다음 개발 우선순위
 
-1. 일반 명중과 Critical Hit 평균 분리 표시
-2. Sustained 추가 명중 표시
-3. 상처 굴림 수와 자동 상처 표시
-4. 활성 Ability별 적용 규칙 요약
-5. 불필요한 0값 단계의 표시 정책
-6. 모바일 결과 카드 길이 검증
+1. 데이터 릴리스 manifest 계약
+2. 공통 데이터와 진영별 청크 분리
+3. 파일 해시와 무결성 검증
+4. IndexedDB 캐시 저장
+5. 새 버전 감지와 교체
+6. 갱신 실패 시 기존 정상 버전 복구
 
 ---
 
 ## 9. 기능 추가 체크리스트
 
 - [ ] 규칙 적용 시점을 정의했다.
-- [ ] 데이터 효과와 계산 효과의 경계를 분리했다.
-- [ ] 효과 충돌 정책을 정의했다.
+- [ ] 계산 상태와 표시 상태를 분리했다.
+- [ ] 조건부 UI 표시 정책을 순수 함수로 테스트했다.
 - [ ] 정상·경계·오류 테스트를 추가했다.
 - [ ] 기존 미적용 입력의 호환성을 검증했다.
 - [ ] 모든 공개 분포 정규화를 검증했다.
