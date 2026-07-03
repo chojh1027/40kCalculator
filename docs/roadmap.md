@@ -1,6 +1,6 @@
 # Dice Servitor 개발 로드맵
 
-- 문서 상태: v0.2
+- 문서 상태: v0.3
 - 기준일: 2026-07-03
 - 대상 저장소: `chojh1027/40kCalculator`
 - 관련 문서: [프로젝트 프로포절](./proposal.md), [기술 설계서](./technical-design.md), [개발 지침 및 진행 현황](./development-guide.md)
@@ -19,15 +19,15 @@
 
 ## 2. 현재 단계 평가
 
-현재 프로젝트는 **기본 전투 확률 계산 MVP와 선택형 웹 UI가 동작하며, 확률 계산 코어 일반화를 시작한 단계**다.
+현재 프로젝트는 **기본 전투 확률 계산 MVP와 선택형 웹 UI가 동작하며, 확률 계산 코어 일반화를 진행하는 단계**다.
 
 계산 엔진은 고정 공격 횟수와 고정 피해를 사용하는 단일 공격 그룹에 대해 명중, 상처, 내성, 피해 할당을 실제 이산 확률분포로 계산한다. 다중 운드 모델과 일반 피해의 초과 피해 비전달(non-spill)을 처리하며, 평균 유효 피해, 평균 파괴 모델 수, 가장 가능성이 높은 결과와 전멸 확률을 반환한다.
 
+공통 PMF 모듈과 `DiceExpression` 모듈이 추가됐다. 고정값, D3, D6, `2D6+1`과 같은 표현을 검증하고 정확한 `Pmf<number>`로 변환할 수 있다. 다만 기존 `BattleInput.attacks`와 `BattleInput.damage`는 아직 `number`이므로 실제 전투 계산은 여전히 고정값만 사용한다.
+
 웹 UI는 영어로 제공되며 Alliance → Faction → Unit → Weapon 순서로 공격 대상을 구성하고 방어 유닛을 선택할 수 있다. 서비스 표시 이름은 `Dice Servitor`다.
 
-유닛과 무장 데이터는 `apps/web/src/data/catalog.ts`로 UI 컴포넌트에서 분리됐고, 유닛은 `weaponIds`로 무장을 참조한다. 다만 데이터는 아직 TypeScript 번들에 포함된 샘플 카탈로그다.
-
-공통 확률질량함수 모듈 `packages/calculator/src/pmf.ts`가 추가됐다. 이 모듈은 상태 병합과 정규화, 변환, 조건부 합성, 독립 분포 결합, 반복 합성, 기대값, 최빈값과 조건 확률을 제공한다. 아직 기존 전투 계산은 PMF 모듈로 이전되지 않았다.
+유닛과 무장 데이터는 `apps/web/src/data/catalog.ts`로 UI 컴포넌트에서 분리됐지만 아직 TypeScript 번들에 포함된 샘플 카탈로그다.
 
 ### 완료된 기반
 
@@ -38,15 +38,16 @@
 | 기본 전투 계산 | ✅ | 명중, 상처, 내성, 고정 피해, 모델별 피해 할당 |
 | 실제 이산 확률분포 | ✅ | 가능한 결과 확률 합산 |
 | 공통 PMF 자료구조 | ✅ | 정규화, 병합, 합성, 반복, 요약 연산 |
-| PMF 단위 테스트 | ✅ | 정상·경계 사례 9개 추가 |
+| `DiceExpression` | ✅ | 고정값·복수 주사위·보정치 표현 및 PMF 변환 |
+| 확률 코어 단위 테스트 | ✅ | 정상·경계 사례 검증 |
 | 영어 선택형 UI | ✅ | Alliance, Faction, Unit, Weapon 선택 |
 | 유닛·무장 분리 | 🟡 | 타입과 카탈로그는 분리됐으나 외부 데이터는 아님 |
 | GitHub Actions·Pages | ✅ | 검사와 정적 배포 구성 |
 
 ### 현재 핵심 제약
 
-- 공격 횟수와 피해가 고정 정수다.
-- 기존 전투 계산은 아직 공통 PMF 모듈을 사용하지 않는다.
+- 실제 전투 계산의 공격 횟수와 피해는 고정 정수다.
+- 기존 전투 계산은 아직 공통 PMF와 `DiceExpression`을 사용하지 않는다.
 - 단일 공격 그룹만 지원한다.
 - 재굴림, 치명타, 추가 명중, 치명상, 피해 감소, Feel No Pain을 지원하지 않는다.
 - 유닛과 모델 프로필이 하나의 `Unit` 타입에 결합돼 있다.
@@ -78,26 +79,51 @@ packages/calculator/src/pmf.test.ts
 
 제공 기능:
 
-- `Pmf.from`: 중복 상태 병합 및 자동 정규화
-- `Pmf.certain`: 확정 분포 생성
-- `map`: 값 변환 후 동일 결과 병합
-- `flatMap`: 조건부 확률분포 합성
-- `combine`: 독립 분포의 데카르트 곱 합성
-- `repeat`: 동일 분포의 반복 누적
-- `expectation`: 기대값 계산
-- `mode`: 최빈 결과 반환
-- `probabilityOf`: 조건을 만족하는 확률 합산
+- 중복 상태 병합과 자동 정규화
+- 확정 분포 생성
+- 값 변환과 조건부 합성
+- 독립 분포 결합과 반복 합성
+- 기대값, 최빈값과 조건 확률
 - 객체 상태용 명시적 `PmfKeySelector`
-- 잘못된 확률, 빈 분포와 잘못된 반복 횟수 검증
+- 잘못된 확률과 반복 횟수 검증
+
+### 단계 2: `DiceExpression`과 PMF 변환
+
+상태: ✅ 완료
+
+구현 파일:
+
+```text
+packages/calculator/src/dice-expression.ts
+packages/calculator/src/dice-expression.test.ts
+```
+
+표현 구조:
+
+```ts
+type DiceExpression =
+  | { kind: "fixed"; value: number }
+  | { kind: "dice"; count: number; sides: number; modifier?: number };
+```
+
+제공 기능:
+
+- 고정값 분포 생성
+- D3와 D6 균등분포 생성
+- `2D6+1`과 같은 복수 주사위 합성
+- 가능한 최소·최대 결과 계산
+- 비정수, 음수 결과, 잘못된 주사위 수와 면 수 검증
+- 주사위 수와 면 수를 각각 최대 100으로 제한
+- `@40k-calculator/calculator/dice-expression` 하위 경로 공개
 
 완료 조건:
 
-- [x] 확률 합 자동 정규화
-- [x] 동일 상태 확률 병합
-- [x] 원시값과 객체 상태 모두 지원
-- [x] 독립·조건부·반복 분포 합성 지원
-- [x] 기대값과 최빈값 제공
-- [x] 단위 테스트 추가
+- [x] 고정값, D3와 D6 표현
+- [x] 복수 주사위와 정수 보정치 지원
+- [x] 정확한 PMF 변환
+- [x] 결과 범위 계산
+- [x] 입력 검증
+- [x] 정상·경계 사례 테스트
 
 ---
 
@@ -111,9 +137,9 @@ packages/calculator/src/pmf.test.ts
 
 - [x] 공통 `Pmf<T>` 자료구조 정의
 - [x] PMF 정규화, 합성, 변환, 반복, 기대값, 최빈값 연산 구현
-- [ ] 고정값과 D3, D6를 표현하는 `DiceExpression` 정의
-- [ ] 가변 공격 횟수 지원
-- [ ] 가변 피해 지원
+- [x] 고정값과 D3, D6를 표현하는 `DiceExpression` 정의
+- [ ] `BattleInput.attacks`의 가변 공격 횟수 지원
+- [ ] `BattleInput.damage`의 가변 피해 지원
 - [ ] 기존 고정값 계산을 PMF 구조로 이전
 - [ ] 골든 테스트 추가
 - [ ] 확률 범위, 총합, 결정성, 단조성 불변식 테스트 강화
@@ -225,7 +251,7 @@ release
 |---:|---|---:|
 | 0 | 문서와 실제 구현 상태 동기화 | ✅ |
 | 1 | 공통 PMF 자료구조 | ✅ |
-| 2 | `DiceExpression` 정의 | ⬜ |
+| 2 | `DiceExpression` 정의와 PMF 변환 | ✅ |
 | 3 | 가변 공격 횟수 | ⬜ |
 | 4 | 가변 피해와 기존 계산 이전 | ⬜ |
 | 5 | 골든·불변식 테스트 강화 | ⬜ |
@@ -235,7 +261,7 @@ release
 | 9 | 데이터 릴리스와 IndexedDB | ⬜ |
 | 10 | 데이터 갱신 CLI와 다국어 | ⬜ |
 
-다음 개발 작업은 **`DiceExpression` 정의와 PMF 변환 함수 구현**이다.
+다음 개발 작업은 **가변 공격 횟수를 `BattleInput`과 계산 파이프라인에 통합하는 것**이다.
 
 ---
 
