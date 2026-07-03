@@ -1,5 +1,9 @@
 export { parseGameDataCatalog } from "./validation";
 export type {
+  AbilityEffect,
+  RerollPolicyKind,
+} from "./ability-effects";
+export type {
   Ability,
   Alliance,
   CatalogMetadata,
