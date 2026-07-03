@@ -1,5 +1,16 @@
+import {
+  diceExpressionBounds,
+  diceExpressionToPmf,
+  type DiceExpression,
+} from "./dice-expression";
+import { Pmf } from "./pmf";
+
+export type { DiceExpression } from "./dice-expression";
+
+export type AttackCount = number | DiceExpression;
+
 export interface BattleInput {
-  attacks: number;
+  attacks: AttackCount;
   skill: number;
   strength: number;
   armorPenetration: number;
@@ -42,6 +53,7 @@ export interface CalculationResult {
   outcomeDistribution: OutcomeProbability[];
   destroyedModelDistribution: DestroyedModelProbability[];
   stageDistributions: {
+    attacks: ValueProbability[];
     hits: ValueProbability[];
     wounds: ValueProbability[];
     failedSaves: ValueProbability[];
@@ -57,7 +69,7 @@ export interface CalculationResult {
   };
 }
 
-const EPSILON = 1e-12;
+const MAX_ATTACK_COUNT = 200;
 
 function assertIntegerInRange(name: string, value: number, min: number, max: number): void {
   if (!Number.isInteger(value) || value < min || value > max) {
@@ -65,8 +77,23 @@ function assertIntegerInRange(name: string, value: number, min: number, max: num
   }
 }
 
+export function attackCountToPmf(attacks: AttackCount): Pmf<number> {
+  if (typeof attacks === "number") {
+    assertIntegerInRange("attacks", attacks, 0, MAX_ATTACK_COUNT);
+    return Pmf.certain(attacks);
+  }
+
+  const bounds = diceExpressionBounds(attacks);
+  if (bounds.maximum > MAX_ATTACK_COUNT) {
+    throw new RangeError(
+      `attacks must produce an integer between 0 and ${MAX_ATTACK_COUNT}.`,
+    );
+  }
+
+  return diceExpressionToPmf(attacks);
+}
+
 function validateInput(input: BattleInput): void {
-  assertIntegerInRange("attacks", input.attacks, 0, 200);
   assertIntegerInRange("skill", input.skill, 2, 6);
   assertIntegerInRange("strength", input.strength, 1, 30);
   assertIntegerInRange("armorPenetration", input.armorPenetration, -6, 0);
@@ -121,31 +148,19 @@ function binomialProbability(n: number, k: number, p: number): number {
   return binomialCoefficient(n, k) * p ** k * (1 - p) ** (n - k);
 }
 
-function binomialDistribution(trials: number, successProbability: number): ValueProbability[] {
-  const distribution = Array.from({ length: trials + 1 }, (_, value) => ({
-    value,
-    probability: binomialProbability(trials, value, successProbability),
-  }));
-  const totalProbability = distribution.reduce((sum, row) => sum + row.probability, 0);
-
-  return distribution.map((row) => ({
-    ...row,
-    probability: row.probability / totalProbability,
-  }));
+function binomialPmf(trials: number, successProbability: number): Pmf<number> {
+  return Pmf.from(
+    Array.from({ length: trials + 1 }, (_, value) => ({
+      value,
+      probability: binomialProbability(trials, value, successProbability),
+    })),
+  );
 }
 
-function aggregateValueDistribution(
-  rows: Array<{ value: number; probability: number }>,
-): ValueProbability[] {
-  const probabilities = new Map<number, number>();
-  for (const row of rows) {
-    probabilities.set(row.value, (probabilities.get(row.value) ?? 0) + row.probability);
-  }
-
-  const totalProbability = [...probabilities.values()].reduce((sum, probability) => sum + probability, 0);
-  return [...probabilities.entries()]
-    .map(([value, probability]) => ({ value, probability: probability / totalProbability }))
-    .sort((a, b) => a.value - b.value);
+function toValueDistribution(distribution: Pmf<number>): ValueProbability[] {
+  return distribution.entries
+    .map((entry) => ({ ...entry }))
+    .sort((left, right) => left.value - right.value);
 }
 
 export function allocateFixedDamage(
@@ -177,6 +192,7 @@ function stateKey(state: DefenderDamageState): string {
 }
 
 export function calculateBattle(input: BattleInput): CalculationResult {
+  const attacks = attackCountToPmf(input.attacks);
   validateInput(input);
 
   const hitProbability = rollSuccessProbability(input.skill);
@@ -190,35 +206,32 @@ export function calculateBattle(input: BattleInput): CalculationResult {
   const woundFromAttackProbability = hitProbability * woundProbability;
   const unsavedAttackProbability = woundFromAttackProbability * failedSaveProbability;
 
-  const aggregated = new Map<string, OutcomeProbability>();
+  const hits = attacks.flatMap((attackCount) => binomialPmf(attackCount, hitProbability));
+  const wounds = attacks.flatMap((attackCount) =>
+    binomialPmf(attackCount, woundFromAttackProbability),
+  );
+  const failedSaves = attacks.flatMap((attackCount) =>
+    binomialPmf(attackCount, unsavedAttackProbability),
+  );
+  const outcomes = failedSaves.map(
+    (unsavedAttacks) =>
+      allocateFixedDamage(
+        unsavedAttacks,
+        input.damage,
+        input.targetWounds,
+        input.targetModelCount,
+      ),
+    stateKey,
+  );
 
-  for (let unsavedAttacks = 0; unsavedAttacks <= input.attacks; unsavedAttacks += 1) {
-    const probability = binomialProbability(input.attacks, unsavedAttacks, unsavedAttackProbability);
-    if (probability < EPSILON) continue;
-
-    const state = allocateFixedDamage(
-      unsavedAttacks,
-      input.damage,
-      input.targetWounds,
-      input.targetModelCount,
-    );
-    const key = stateKey(state);
-    const existing = aggregated.get(key);
-    aggregated.set(key, {
-      ...state,
-      probability: (existing?.probability ?? 0) + probability,
-    });
-  }
-
-  const totalProbability = [...aggregated.values()].reduce((sum, outcome) => sum + outcome.probability, 0);
-  const outcomeDistribution = [...aggregated.values()]
-    .map((outcome) => ({ ...outcome, probability: outcome.probability / totalProbability }))
-    .sort((a, b) =>
-      a.destroyedModels - b.destroyedModels ||
-      b.currentModelRemainingWounds - a.currentModelRemainingWounds,
+  const outcomeDistribution = outcomes.entries
+    .map(({ value, probability }) => ({ ...value, probability }))
+    .sort((left, right) =>
+      left.destroyedModels - right.destroyedModels ||
+      right.currentModelRemainingWounds - left.currentModelRemainingWounds,
     );
 
-  const effectiveDamage = (outcome: OutcomeProbability): number => {
+  const effectiveDamage = (outcome: DefenderDamageState): number => {
     if (outcome.unitDestroyed) return input.targetWounds * input.targetModelCount;
     return (
       outcome.destroyedModels * input.targetWounds +
@@ -226,20 +239,10 @@ export function calculateBattle(input: BattleInput): CalculationResult {
     );
   };
 
-  const expectedEffectiveDamage = outcomeDistribution.reduce(
-    (sum, outcome) => sum + effectiveDamage(outcome) * outcome.probability,
-    0,
-  );
-  const expectedDestroyedModels = outcomeDistribution.reduce(
-    (sum, outcome) => sum + outcome.destroyedModels * outcome.probability,
-    0,
-  );
-  const mostLikely = outcomeDistribution.reduce((best, outcome) =>
-    outcome.probability > best.probability ? outcome : best,
-  );
-  const unitDestroyedProbability = outcomeDistribution
-    .filter((outcome) => outcome.unitDestroyed)
-    .reduce((sum, outcome) => sum + outcome.probability, 0);
+  const expectedEffectiveDamage = outcomes.expectation(effectiveDamage);
+  const expectedDestroyedModels = outcomes.expectation((outcome) => outcome.destroyedModels);
+  const mostLikely = outcomes.mode();
+  const unitDestroyedProbability = outcomes.probabilityOf((outcome) => outcome.unitDestroyed);
 
   const exactByDestroyedModels = new Map<number, number>();
   for (const outcome of outcomeDistribution) {
@@ -258,38 +261,32 @@ export function calculateBattle(input: BattleInput): CalculationResult {
     destroyedModelDistribution.push({ destroyedModels, exactProbability, atLeastProbability });
   }
 
-  const effectiveDamageDistribution = aggregateValueDistribution(
-    outcomeDistribution.map((outcome) => ({
-      value: effectiveDamage(outcome),
-      probability: outcome.probability,
-    })),
-  );
-  const destroyedModelsDistribution = destroyedModelDistribution.map((row) => ({
-    value: row.destroyedModels,
-    probability: row.exactProbability,
-  }));
+  const effectiveDamageDistribution = outcomes.map(effectiveDamage);
+  const destroyedModelsDistribution = outcomes.map((outcome) => outcome.destroyedModels);
+  const expectedAttacks = attacks.expectation((attackCount) => attackCount);
 
   return {
     summary: {
       expectedEffectiveDamage,
       expectedDestroyedModels,
-      mostLikelyOutcome: { ...mostLikely },
+      mostLikelyOutcome: { ...mostLikely.value, probability: mostLikely.probability },
       unitDestroyedProbability,
     },
     outcomeDistribution,
     destroyedModelDistribution,
     stageDistributions: {
-      hits: binomialDistribution(input.attacks, hitProbability),
-      wounds: binomialDistribution(input.attacks, woundFromAttackProbability),
-      failedSaves: binomialDistribution(input.attacks, unsavedAttackProbability),
-      effectiveDamage: effectiveDamageDistribution,
-      destroyedModels: destroyedModelsDistribution,
+      attacks: toValueDistribution(attacks),
+      hits: toValueDistribution(hits),
+      wounds: toValueDistribution(wounds),
+      failedSaves: toValueDistribution(failedSaves),
+      effectiveDamage: toValueDistribution(effectiveDamageDistribution),
+      destroyedModels: toValueDistribution(destroyedModelsDistribution),
     },
     stageBreakdown: {
-      expectedAttacks: input.attacks,
-      expectedHits: input.attacks * hitProbability,
-      expectedWounds: input.attacks * woundFromAttackProbability,
-      expectedFailedSaves: input.attacks * unsavedAttackProbability,
+      expectedAttacks,
+      expectedHits: expectedAttacks * hitProbability,
+      expectedWounds: expectedAttacks * woundFromAttackProbability,
+      expectedFailedSaves: expectedAttacks * unsavedAttackProbability,
       expectedFinalDamage: expectedEffectiveDamage,
     },
   };
