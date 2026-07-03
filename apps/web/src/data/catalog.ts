@@ -1,4 +1,7 @@
-import type { AttackCount } from "@40k-calculator/calculator";
+import type {
+  AttackCount,
+  DamageAmount,
+} from "@40k-calculator/calculator";
 
 export type WeaponType = "ranged" | "melee";
 
@@ -20,7 +23,7 @@ export interface Weapon {
   attacks: AttackCount;
   strength: number;
   armorPenetration: number;
-  damage: number;
+  damage: DamageAmount;
   skillOverride?: number;
 }
 
@@ -89,6 +92,15 @@ export const WEAPONS: Weapon[] = [
     strength: 12,
     armorPenetration: -3,
     damage: 4,
+  },
+  {
+    id: "temporary-d6-damage-cannon",
+    name: "D6 Damage Cannon (Temporary)",
+    type: "ranged",
+    attacks: 1,
+    strength: 12,
+    armorPenetration: -3,
+    damage: { kind: "dice", count: 1, sides: 6 },
   },
   {
     id: "storm-bolter",
@@ -170,7 +182,7 @@ export const UNITS: Unit[] = [
     defaultModelCount: 5,
     minModelCount: 5,
     maxModelCount: 10,
-    weaponIds: ["lascannon", "chainsword"],
+    weaponIds: ["lascannon", "temporary-d6-damage-cannon", "chainsword"],
   },
   {
     id: "terminator-squad",
