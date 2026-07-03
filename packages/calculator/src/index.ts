@@ -93,6 +93,38 @@ export function attackCountToPmf(attacks: AttackCount): Pmf<number> {
   return diceExpressionToPmf(attacks);
 }
 
+export function repeatAttackCount(attacks: AttackCount, repetitions: number): AttackCount {
+  if (!Number.isSafeInteger(repetitions) || repetitions < 0) {
+    throw new RangeError("attack repetitions must be a non-negative safe integer.");
+  }
+  if (repetitions === 0) return 0;
+
+  if (typeof attacks === "number") {
+    const repeatedAttacks = attacks * repetitions;
+    attackCountToPmf(repeatedAttacks);
+    return repeatedAttacks;
+  }
+
+  if (attacks.kind === "fixed") {
+    const repeatedAttacks: DiceExpression = {
+      kind: "fixed",
+      value: attacks.value * repetitions,
+    };
+    attackCountToPmf(repeatedAttacks);
+    return repeatedAttacks;
+  }
+
+  const modifier = (attacks.modifier ?? 0) * repetitions;
+  const repeatedAttacks: DiceExpression = {
+    kind: "dice",
+    count: attacks.count * repetitions,
+    sides: attacks.sides,
+    ...(modifier === 0 ? {} : { modifier }),
+  };
+  attackCountToPmf(repeatedAttacks);
+  return repeatedAttacks;
+}
+
 function validateInput(input: BattleInput): void {
   assertIntegerInRange("skill", input.skill, 2, 6);
   assertIntegerInRange("strength", input.strength, 1, 30);
