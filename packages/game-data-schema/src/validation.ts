@@ -2,6 +2,7 @@ import {
   diceExpressionBounds,
   type DiceExpression,
 } from "@40k-calculator/calculator/dice-expression";
+import type { AbilityEffect, RerollPolicyKind } from "./ability-effects";
 import type {
   Ability,
   Alliance,
@@ -172,6 +173,50 @@ function parseDiceValue(
   return expression;
 }
 
+function parseAbilityEffect(value: unknown, path: string): AbilityEffect {
+  const record = asRecord(value, path);
+  const kind = readStringLiteral(
+    record.kind,
+    [
+      "hit-reroll",
+      "wound-reroll",
+      "critical-hit-threshold",
+      "sustained-hits",
+      "lethal-hits",
+    ] as const,
+    `${path}.kind`,
+  );
+
+  if (kind === "hit-reroll" || kind === "wound-reroll") {
+    assertAllowedKeys(record, ["kind", "policy"], path);
+    const policy = readStringLiteral(
+      record.policy,
+      ["none", "ones", "failures"] as const,
+      `${path}.policy`,
+    ) satisfies RerollPolicyKind;
+    return Object.freeze({ kind, policy });
+  }
+
+  if (kind === "critical-hit-threshold") {
+    assertAllowedKeys(record, ["kind", "value"], path);
+    return Object.freeze({
+      kind,
+      value: readInteger(record.value, `${path}.value`, 2, 6),
+    });
+  }
+
+  if (kind === "sustained-hits") {
+    assertAllowedKeys(record, ["kind", "extraHits"], path);
+    return Object.freeze({
+      kind,
+      extraHits: parseDiceValue(record.extraHits, `${path}.extraHits`, 0, 6),
+    });
+  }
+
+  assertAllowedKeys(record, ["kind"], path);
+  return Object.freeze({ kind: "lethal-hits" });
+}
+
 function parseMetadata(value: unknown): CatalogMetadata {
   const path = "catalog.metadata";
   const record = asRecord(value, path);
@@ -276,11 +321,17 @@ function parseModelProfile(value: unknown, index: number): ModelProfile {
 function parseAbility(value: unknown, index: number): Ability {
   const path = `catalog.abilities[${index}]`;
   const record = asRecord(value, path);
-  assertAllowedKeys(record, ["id", "name", "description"], path);
+  assertAllowedKeys(record, ["id", "name", "description", "effects"], path);
+  const effects = record.effects === undefined
+    ? []
+    : readArray(record.effects, `${path}.effects`).map((effect, effectIndex) =>
+        parseAbilityEffect(effect, `${path}.effects[${effectIndex}]`),
+      );
   return Object.freeze({
     id: readId(record.id, `${path}.id`),
     name: readString(record.name, `${path}.name`),
     description: readOptionalString(record.description, `${path}.description`),
+    effects: Object.freeze(effects),
   });
 }
 
