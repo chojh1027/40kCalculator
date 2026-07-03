@@ -1,0 +1,264 @@
+{
+  "metadata": {
+    "schemaVersion": 1,
+    "gameSystem": "warhammer-40000",
+    "edition": "10th Edition",
+    "releaseId": "dice-servitor-sample-2026-07-r1",
+    "effectiveDate": "2026-07-03",
+    "lastModified": "2026-07-03",
+    "source": {
+      "label": "Dice Servitor self-authored sample catalog",
+      "kind": "sample"
+    }
+  },
+  "alliances": [
+    { "id": "imperium", "name": "Imperium" },
+    { "id": "chaos", "name": "Chaos" },
+    { "id": "xenos", "name": "Xenos" }
+  ],
+  "factions": [
+    { "id": "space-marines", "allianceId": "imperium", "name": "Space Marines" },
+    { "id": "astra-militarum", "allianceId": "imperium", "name": "Astra Militarum" },
+    { "id": "chaos-space-marines", "allianceId": "chaos", "name": "Chaos Space Marines" },
+    { "id": "orks", "allianceId": "xenos", "name": "Orks" }
+  ],
+  "modelProfiles": [
+    {
+      "id": "intercessor-model",
+      "name": "Intercessor",
+      "ballisticSkill": 3,
+      "weaponSkill": 3,
+      "toughness": 4,
+      "save": 3,
+      "wounds": 2
+    },
+    {
+      "id": "hellblaster-model",
+      "name": "Hellblaster",
+      "ballisticSkill": 3,
+      "weaponSkill": 3,
+      "toughness": 4,
+      "save": 3,
+      "wounds": 2
+    },
+    {
+      "id": "devastator-model",
+      "name": "Devastator",
+      "ballisticSkill": 3,
+      "weaponSkill": 3,
+      "toughness": 4,
+      "save": 3,
+      "wounds": 2
+    },
+    {
+      "id": "terminator-model",
+      "name": "Terminator",
+      "ballisticSkill": 3,
+      "weaponSkill": 3,
+      "toughness": 5,
+      "save": 2,
+      "invulnerableSave": 4,
+      "wounds": 3
+    },
+    {
+      "id": "guardsman-model",
+      "name": "Guardsman",
+      "ballisticSkill": 4,
+      "weaponSkill": 4,
+      "toughness": 3,
+      "save": 5,
+      "wounds": 1
+    },
+    {
+      "id": "legionary-model",
+      "name": "Legionary",
+      "ballisticSkill": 3,
+      "weaponSkill": 3,
+      "toughness": 4,
+      "save": 3,
+      "wounds": 2
+    },
+    {
+      "id": "boy-model",
+      "name": "Ork Boy",
+      "ballisticSkill": 5,
+      "weaponSkill": 3,
+      "toughness": 5,
+      "save": 5,
+      "wounds": 1
+    }
+  ],
+  "abilities": [],
+  "weaponProfiles": [
+    {
+      "id": "bolt-rifle",
+      "name": "Bolt Rifle",
+      "type": "ranged",
+      "attacks": 2,
+      "strength": 4,
+      "armorPenetration": -1,
+      "damage": 1,
+      "abilityIds": []
+    },
+    {
+      "id": "temporary-d6-blaster",
+      "name": "D6 Test Blaster (Temporary)",
+      "type": "ranged",
+      "attacks": { "kind": "dice", "count": 1, "sides": 6 },
+      "strength": 4,
+      "armorPenetration": 0,
+      "damage": 1,
+      "abilityIds": []
+    },
+    {
+      "id": "plasma-incinerator",
+      "name": "Plasma Incinerator",
+      "type": "ranged",
+      "attacks": 2,
+      "strength": 7,
+      "armorPenetration": -2,
+      "damage": 2,
+      "abilityIds": []
+    },
+    {
+      "id": "lascannon",
+      "name": "Lascannon (MVP fixed damage)",
+      "type": "ranged",
+      "attacks": 1,
+      "strength": 12,
+      "armorPenetration": -3,
+      "damage": 4,
+      "abilityIds": []
+    },
+    {
+      "id": "temporary-d6-damage-cannon",
+      "name": "D6 Damage Cannon (Temporary)",
+      "type": "ranged",
+      "attacks": 1,
+      "strength": 12,
+      "armorPenetration": -3,
+      "damage": { "kind": "dice", "count": 1, "sides": 6 },
+      "abilityIds": []
+    },
+    {
+      "id": "storm-bolter",
+      "name": "Storm Bolter",
+      "type": "ranged",
+      "attacks": 2,
+      "strength": 4,
+      "armorPenetration": 0,
+      "damage": 1,
+      "abilityIds": []
+    },
+    {
+      "id": "chainsword",
+      "name": "Chainsword",
+      "type": "melee",
+      "attacks": 4,
+      "strength": 4,
+      "armorPenetration": -1,
+      "damage": 1,
+      "abilityIds": []
+    },
+    {
+      "id": "power-fist",
+      "name": "Power Fist",
+      "type": "melee",
+      "attacks": 3,
+      "strength": 8,
+      "armorPenetration": -2,
+      "damage": 2,
+      "skillOverride": 4,
+      "abilityIds": []
+    },
+    {
+      "id": "choppa",
+      "name": "Choppa",
+      "type": "melee",
+      "attacks": 3,
+      "strength": 4,
+      "armorPenetration": -1,
+      "damage": 1,
+      "abilityIds": []
+    }
+  ],
+  "units": [
+    {
+      "id": "intercessor-squad",
+      "factionId": "space-marines",
+      "name": "Intercessor Squad",
+      "modelProfileId": "intercessor-model",
+      "defaultModelCount": 5,
+      "minModelCount": 5,
+      "maxModelCount": 10,
+      "weaponProfileIds": ["bolt-rifle", "temporary-d6-blaster", "chainsword"],
+      "abilityIds": []
+    },
+    {
+      "id": "hellblaster-squad",
+      "factionId": "space-marines",
+      "name": "Hellblaster Squad",
+      "modelProfileId": "hellblaster-model",
+      "defaultModelCount": 5,
+      "minModelCount": 5,
+      "maxModelCount": 10,
+      "weaponProfileIds": ["plasma-incinerator"],
+      "abilityIds": []
+    },
+    {
+      "id": "devastator-squad",
+      "factionId": "space-marines",
+      "name": "Devastator Squad",
+      "modelProfileId": "devastator-model",
+      "defaultModelCount": 5,
+      "minModelCount": 5,
+      "maxModelCount": 10,
+      "weaponProfileIds": ["lascannon", "temporary-d6-damage-cannon", "chainsword"],
+      "abilityIds": []
+    },
+    {
+      "id": "terminator-squad",
+      "factionId": "space-marines",
+      "name": "Terminator Squad",
+      "modelProfileId": "terminator-model",
+      "defaultModelCount": 5,
+      "minModelCount": 5,
+      "maxModelCount": 10,
+      "weaponProfileIds": ["storm-bolter", "power-fist"],
+      "abilityIds": []
+    },
+    {
+      "id": "infantry-squad",
+      "factionId": "astra-militarum",
+      "name": "Infantry Squad",
+      "modelProfileId": "guardsman-model",
+      "defaultModelCount": 10,
+      "minModelCount": 10,
+      "maxModelCount": 20,
+      "weaponProfileIds": ["lascannon"],
+      "abilityIds": []
+    },
+    {
+      "id": "legionaries",
+      "factionId": "chaos-space-marines",
+      "name": "Legionaries",
+      "modelProfileId": "legionary-model",
+      "defaultModelCount": 5,
+      "minModelCount": 5,
+      "maxModelCount": 10,
+      "weaponProfileIds": ["chainsword"],
+      "abilityIds": []
+    },
+    {
+      "id": "boyz",
+      "factionId": "orks",
+      "name": "Boyz",
+      "modelProfileId": "boy-model",
+      "defaultModelCount": 10,
+      "minModelCount": 10,
+      "maxModelCount": 20,
+      "weaponProfileIds": ["choppa"],
+      "abilityIds": []
+    }
+  ]
+}
