@@ -9,11 +9,11 @@ import {
 describe("web sample catalog", () => {
   it("loads the external JSON through runtime validation", () => {
     expect(CATALOG.metadata.schemaVersion).toBe(1);
-    expect(CATALOG.metadata.releaseId).toBe("dice-servitor-sample-2026-07-r1");
+    expect(CATALOG.metadata.releaseId).toBe("dice-servitor-sample-2026-07-r2");
     expect(CATALOG.alliances).toHaveLength(3);
     expect(CATALOG.factions).toHaveLength(4);
     expect(CATALOG.modelProfiles).toHaveLength(7);
-    expect(CATALOG.weaponProfiles).toHaveLength(9);
+    expect(CATALOG.weaponProfiles).toHaveLength(11);
     expect(CATALOG.units).toHaveLength(7);
   });
 
@@ -29,7 +29,7 @@ describe("web sample catalog", () => {
     }
   });
 
-  it("keeps the existing Intercessor calculation profile stable", () => {
+  it("keeps the existing Intercessor profile and adds temporary rule weapons", () => {
     const unit = UNITS.find((candidate) => candidate.id === "intercessor-squad");
     expect(unit).toBeDefined();
     expect(unit?.modelProfile).toMatchObject({
@@ -42,7 +42,25 @@ describe("web sample catalog", () => {
     expect(unit?.weaponIds).toEqual([
       "bolt-rifle",
       "temporary-d6-blaster",
+      "temporary-sustained-hits-rifle",
+      "temporary-lethal-hits-rifle",
       "chainsword",
     ]);
+  });
+
+  it("maps temporary weapon IDs to calculator combat rules", () => {
+    expect(
+      WEAPONS_BY_ID.get("temporary-sustained-hits-rifle")?.combatRules,
+    ).toEqual({
+      labels: ["Sustained Hits 1"],
+      sustainedHits: 1,
+    });
+    expect(
+      WEAPONS_BY_ID.get("temporary-lethal-hits-rifle")?.combatRules,
+    ).toEqual({
+      labels: ["Lethal Hits"],
+      lethalHits: true,
+    });
+    expect(WEAPONS_BY_ID.get("bolt-rifle")?.combatRules).toBeUndefined();
   });
 });
