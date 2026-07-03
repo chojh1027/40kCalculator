@@ -7,7 +7,9 @@ import {
   type DamageAmount,
   type ValueProbability,
 } from "@40k-calculator/calculator";
+import { resolveAbilityRules } from "./data/ability-rules";
 import {
+  ABILITIES_BY_ID,
   ALLIANCES,
   FACTIONS,
   UNITS,
@@ -161,14 +163,20 @@ export function App() {
     () => repeatAttackCount(weapon.attacks, attackingModelCount),
     [weapon.attacks, attackingModelCount],
   );
-  const weaponAbilityLabels = weapon.combatRules?.labels ?? [];
+  const abilityRules = useMemo(
+    () => resolveAbilityRules(attackingUnit, weapon, ABILITIES_BY_ID),
+    [attackingUnit, weapon],
+  );
 
   const input: BattleInput = {
     attacks: totalAttacks,
     skill,
-    sustainedHits: weapon.combatRules?.sustainedHits,
-    lethalHits: weapon.combatRules?.lethalHits,
+    hitReroll: abilityRules.hitReroll,
+    criticalHitOn: abilityRules.criticalHitOn,
+    sustainedHits: abilityRules.sustainedHits,
+    lethalHits: abilityRules.lethalHits,
     strength: weapon.strength,
+    woundReroll: abilityRules.woundReroll,
     armorPenetration: weapon.armorPenetration,
     damage: weapon.damage,
     targetToughness: defendingUnit.toughness,
@@ -181,9 +189,12 @@ export function App() {
   const result = useMemo(() => calculateBattle(input), [
     input.attacks,
     input.skill,
+    input.hitReroll,
+    input.criticalHitOn,
     input.sustainedHits,
     input.lethalHits,
     input.strength,
+    input.woundReroll,
     input.armorPenetration,
     input.damage,
     input.targetToughness,
@@ -329,8 +340,8 @@ export function App() {
             <div><dt>AP</dt><dd>{weapon.armorPenetration}</dd></div>
             <div><dt>D</dt><dd>{formatDiceValue(weapon.damage)}</dd></div>
           </dl>
-          {weaponAbilityLabels.length > 0 && (
-            <p className="profile-note">Weapon abilities: {weaponAbilityLabels.join(", ")}</p>
+          {abilityRules.labels.length > 0 && (
+            <p className="profile-note">Active abilities: {abilityRules.labels.join(", ")}</p>
           )}
 
           <div className="control-section">
@@ -387,8 +398,8 @@ export function App() {
           </div>
 
           <p className="scope-note">
-            Temporary test weapons currently expose Sustained Hits and Lethal Hits. Re-roll controls,
-            damage modifiers, and Feel No Pain are not yet available in the UI.
+            Unit and weapon Ability effects can supply re-rolls, Critical Hit thresholds, Sustained Hits,
+            and Lethal Hits. Damage modifiers and Feel No Pain are not yet supported.
           </p>
         </form>
 
