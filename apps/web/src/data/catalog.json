@@ -3,7 +3,7 @@
     "schemaVersion": 1,
     "gameSystem": "warhammer-40000",
     "edition": "10th Edition",
-    "releaseId": "dice-servitor-sample-2026-07-r1",
+    "releaseId": "dice-servitor-sample-2026-07-r2",
     "effectiveDate": "2026-07-03",
     "lastModified": "2026-07-03",
     "source": {
@@ -111,6 +111,26 @@
       "abilityIds": []
     },
     {
+      "id": "temporary-sustained-hits-rifle",
+      "name": "Sustained Hits 1 Test Rifle (Temporary)",
+      "type": "ranged",
+      "attacks": 2,
+      "strength": 4,
+      "armorPenetration": -1,
+      "damage": 1,
+      "abilityIds": []
+    },
+    {
+      "id": "temporary-lethal-hits-rifle",
+      "name": "Lethal Hits Test Rifle (Temporary)",
+      "type": "ranged",
+      "attacks": 2,
+      "strength": 4,
+      "armorPenetration": -1,
+      "damage": 1,
+      "abilityIds": []
+    },
+    {
       "id": "plasma-incinerator",
       "name": "Plasma Incinerator",
       "type": "ranged",
@@ -191,7 +211,13 @@
       "defaultModelCount": 5,
       "minModelCount": 5,
       "maxModelCount": 10,
-      "weaponProfileIds": ["bolt-rifle", "temporary-d6-blaster", "chainsword"],
+      "weaponProfileIds": [
+        "bolt-rifle",
+        "temporary-d6-blaster",
+        "temporary-sustained-hits-rifle",
+        "temporary-lethal-hits-rifle",
+        "chainsword"
+      ],
       "abilityIds": []
     },
     {

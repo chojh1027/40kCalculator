@@ -20,7 +20,7 @@ Dice Servitor는 워해머 40,000의 전투 절차를 실제 이산 확률분포
 - 정규화된 외부 JSON 게임 데이터와 런타임 검증
 - 루트 lockfile과 `npm ci` 기반 CI·Pages 배포
 
-현재 웹 카탈로그는 자체 작성 샘플 데이터입니다. 계산 엔진은 재굴림, Critical Hit, Sustained Hits와 Lethal Hits를 지원하지만, 웹 데이터의 `Ability`와 UI에는 아직 연결되지 않았습니다.
+현재 웹 카탈로그는 자체 작성 샘플 데이터입니다. Intercessor Squad에는 `Sustained Hits 1 Test Rifle (Temporary)`과 `Lethal Hits Test Rifle (Temporary)`이 포함되어 실제 계산 경로를 확인할 수 있습니다. 이 두 무장은 정식 Ability 데이터가 아니라 임시 무장 ID 매핑을 사용하며, 다음 단계에서 선언형 Ability 효과로 교체할 예정입니다.
 
 ## 전투 계산 사용
 

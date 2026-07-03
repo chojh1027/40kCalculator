@@ -161,10 +161,13 @@ export function App() {
     () => repeatAttackCount(weapon.attacks, attackingModelCount),
     [weapon.attacks, attackingModelCount],
   );
+  const weaponAbilityLabels = weapon.combatRules?.labels ?? [];
 
   const input: BattleInput = {
     attacks: totalAttacks,
     skill,
+    sustainedHits: weapon.combatRules?.sustainedHits,
+    lethalHits: weapon.combatRules?.lethalHits,
     strength: weapon.strength,
     armorPenetration: weapon.armorPenetration,
     damage: weapon.damage,
@@ -178,6 +181,8 @@ export function App() {
   const result = useMemo(() => calculateBattle(input), [
     input.attacks,
     input.skill,
+    input.sustainedHits,
+    input.lethalHits,
     input.strength,
     input.armorPenetration,
     input.damage,
@@ -324,6 +329,9 @@ export function App() {
             <div><dt>AP</dt><dd>{weapon.armorPenetration}</dd></div>
             <div><dt>D</dt><dd>{formatDiceValue(weapon.damage)}</dd></div>
           </dl>
+          {weaponAbilityLabels.length > 0 && (
+            <p className="profile-note">Weapon abilities: {weaponAbilityLabels.join(", ")}</p>
+          )}
 
           <div className="control-section">
             <h2>Defending Unit</h2>
@@ -378,7 +386,10 @@ export function App() {
             )}
           </div>
 
-          <p className="scope-note">The current MVP does not yet support re-rolls, critical hits, damage modifiers, or Feel No Pain.</p>
+          <p className="scope-note">
+            Temporary test weapons currently expose Sustained Hits and Lethal Hits. Re-roll controls,
+            damage modifiers, and Feel No Pain are not yet available in the UI.
+          </p>
         </form>
 
         <section className="panel results" aria-live="polite">
