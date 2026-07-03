@@ -20,6 +20,7 @@ export interface HitCountState {
 type RollOutcome = "failure" | "normal-success" | "critical-success";
 
 const NO_REROLL: RerollPolicy = Object.freeze({ kind: "none" });
+const PROBABILITY_EPSILON = 1e-12;
 
 function assertRollTarget(name: string, value: number): void {
   if (!Number.isInteger(value) || value < 2 || value > 6) {
@@ -96,6 +97,34 @@ export function rollOutcomeProbabilities(
   });
 }
 
+function validateOutcomeProbabilities(probabilities: RollOutcomeProbabilities): void {
+  const values = [
+    probabilities.failure,
+    probabilities.normalSuccess,
+    probabilities.criticalSuccess,
+    probabilities.totalSuccess,
+  ];
+  if (values.some((value) => !Number.isFinite(value) || value < 0 || value > 1)) {
+    throw new RangeError("Roll outcome probabilities must be finite values between 0 and 1.");
+  }
+
+  const total =
+    probabilities.failure +
+    probabilities.normalSuccess +
+    probabilities.criticalSuccess;
+  if (Math.abs(total - 1) > PROBABILITY_EPSILON) {
+    throw new RangeError("Roll outcome probabilities must sum to 1.");
+  }
+  if (
+    Math.abs(
+      probabilities.totalSuccess -
+      (probabilities.normalSuccess + probabilities.criticalSuccess),
+    ) > PROBABILITY_EPSILON
+  ) {
+    throw new RangeError("totalSuccess must equal normalSuccess plus criticalSuccess.");
+  }
+}
+
 function hitCountKey(state: HitCountState): string {
   return `${state.normalHits}:${state.criticalHits}`;
 }
@@ -107,6 +136,7 @@ export function hitCountPmf(
   if (!Number.isInteger(attacks) || attacks < 0) {
     throw new RangeError("attacks must be a non-negative integer.");
   }
+  validateOutcomeProbabilities(probabilities);
 
   const singleRoll = Pmf.from<RollOutcome>([
     { value: "failure", probability: probabilities.failure },
