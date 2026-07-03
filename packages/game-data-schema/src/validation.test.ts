@@ -38,6 +38,16 @@ const VALID_CATALOG = {
       id: "sample-ability",
       name: "Sample Ability",
       description: "Validation-only ability.",
+      effects: [
+        { kind: "hit-reroll", policy: "ones" },
+        { kind: "critical-hit-threshold", value: 5 },
+        { kind: "sustained-hits", extraHits: { kind: "dice", count: 1, sides: 3 } },
+        { kind: "lethal-hits" },
+      ],
+    },
+    {
+      id: "legacy-description-only",
+      name: "Legacy Description Only",
     },
   ],
   weaponProfiles: [
@@ -72,7 +82,7 @@ const VALID_CATALOG = {
       minModelCount: 5,
       maxModelCount: 10,
       weaponProfileIds: ["bolt-rifle", "test-cannon"],
-      abilityIds: ["sample-ability"],
+      abilityIds: ["legacy-description-only"],
     },
   ],
 } as const;
@@ -93,7 +103,18 @@ describe("parseGameDataCatalog", () => {
       sides: 6,
       modifier: undefined,
     });
+    expect(catalog.abilities[0]?.effects).toEqual([
+      { kind: "hit-reroll", policy: "ones" },
+      { kind: "critical-hit-threshold", value: 5 },
+      {
+        kind: "sustained-hits",
+        extraHits: { kind: "dice", count: 1, sides: 3, modifier: undefined },
+      },
+      { kind: "lethal-hits" },
+    ]);
+    expect(catalog.abilities[1]?.effects).toEqual([]);
     expect(Object.isFrozen(catalog)).toBe(true);
+    expect(Object.isFrozen(catalog.abilities[0]?.effects)).toBe(true);
     expect(Object.isFrozen(catalog.units)).toBe(true);
     expect(Object.isFrozen(catalog.units[0]?.weaponProfileIds)).toBe(true);
   });
@@ -125,6 +146,43 @@ describe("parseGameDataCatalog", () => {
 
     expect(() => parseGameDataCatalog(catalog)).toThrow(
       "catalog.weaponProfiles[0].damage: possible results must stay between 1 and 30",
+    );
+  });
+
+  it("rejects invalid Ability effect kinds and fields", () => {
+    const catalog = cloneCatalog();
+    const abilities = catalog.abilities as Array<Record<string, unknown>>;
+    abilities[0]!.effects = [{ kind: "exploding-hits", value: 1 }];
+
+    expect(() => parseGameDataCatalog(catalog)).toThrow(
+      "catalog.abilities[0].effects[0].kind: must be one of: hit-reroll, wound-reroll, critical-hit-threshold, sustained-hits, lethal-hits",
+    );
+  });
+
+  it("rejects invalid reroll policies and Critical Hit thresholds", () => {
+    const catalog = cloneCatalog();
+    const abilities = catalog.abilities as Array<Record<string, unknown>>;
+    abilities[0]!.effects = [{ kind: "hit-reroll", policy: "all" }];
+
+    expect(() => parseGameDataCatalog(catalog)).toThrow(
+      "catalog.abilities[0].effects[0].policy: must be one of: none, ones, failures",
+    );
+
+    abilities[0]!.effects = [{ kind: "critical-hit-threshold", value: 1 }];
+    expect(() => parseGameDataCatalog(catalog)).toThrow(
+      "catalog.abilities[0].effects[0].value: must be between 2 and 6",
+    );
+  });
+
+  it("rejects Sustained Hits outside calculator bounds", () => {
+    const catalog = cloneCatalog();
+    const abilities = catalog.abilities as Array<Record<string, unknown>>;
+    abilities[0]!.effects = [
+      { kind: "sustained-hits", extraHits: { kind: "dice", count: 1, sides: 6, modifier: 1 } },
+    ];
+
+    expect(() => parseGameDataCatalog(catalog)).toThrow(
+      "catalog.abilities[0].effects[0].extraHits: possible results must stay between 0 and 6",
     );
   });
 

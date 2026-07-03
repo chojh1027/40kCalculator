@@ -1,6 +1,6 @@
 # Dice Servitor 개발 지침 및 진행 현황
 
-- 문서 상태: v0.12
+- 문서 상태: v0.13
 - 기준일: 2026-07-03
 - 대상 저장소: `chojh1027/40kCalculator`
 - 관련 문서: [프로젝트 프로포절](./proposal.md), [기술 설계서](./technical-design.md), [개발 로드맵](./roadmap.md)
@@ -22,126 +22,124 @@
 
 - `packages/calculator`: 순수 전투 확률 계산
 - `packages/game-data-schema`: 데이터 타입과 런타임 검증
-- `apps/web`: 데이터 로딩, 사용자 입력과 표시
+- `apps/web/src/data`: 카탈로그 로딩과 Ability 규칙 해석
+- `apps/web`: 사용자 입력과 결과 표시
 
-### PMF 사용
+### 데이터 규칙
 
-- 가변 주사위와 복수 결과 상태는 `Pmf<T>`로 합성한다.
-- 객체 상태는 명시적 키로 병합한다.
-- 향후 규칙이 참조할 상태를 평균값이나 합계로 조기에 축약하지 않는다.
+- 게임 데이터에는 임의 JavaScript를 넣지 않는다.
+- 계산 가능한 규칙은 선언형 discriminated union으로 저장한다.
+- UI 컴포넌트가 Ability ID별 하드코딩을 갖지 않는다.
+- Unit과 Weapon의 참조는 ID로만 연결한다.
 
 ---
 
-## 2. 명중 규칙 지침
+## 2. Ability 효과 계약
+
+```ts
+type AbilityEffect =
+  | { readonly kind: "hit-reroll"; readonly policy: "none" | "ones" | "failures" }
+  | { readonly kind: "wound-reroll"; readonly policy: "none" | "ones" | "failures" }
+  | { readonly kind: "critical-hit-threshold"; readonly value: number }
+  | { readonly kind: "sustained-hits"; readonly extraHits: SustainedHitCount }
+  | { readonly kind: "lethal-hits" };
+```
+
+```ts
+interface Ability {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string;
+  readonly effects: readonly AbilityEffect[];
+}
+```
+
+기존 JSON의 `effects` 생략은 빈 배열로 해석한다.
+
+### 검증 범위
+
+- `kind`는 등록된 효과만 허용한다.
+- 재굴림 정책은 `none`, `ones`, `failures`만 허용한다.
+- Critical Hit 임계값은 `2~6`이다.
+- Sustained Hits 결과 범위는 `0~6`이다.
+- 효과 객체의 미지원 필드는 거부한다.
+- 파싱 결과와 효과 배열은 동결한다.
+
+---
+
+## 3. Ability 해석 계층
+
+처리 흐름:
+
+```text
+Unit abilityIds
++ Weapon abilityIds
+→ 중복 ID 제거
+→ Ability lookup
+→ effects 순회
+→ 합성된 계산 규칙
+→ BattleInput
+```
+
+해석 함수는 `apps/web/src/data/ability-rules.ts`에 둔다.
+
+### 합성 정책
+
+#### 재굴림
+
+```text
+none < ones < failures
+```
+
+같은 단계의 재굴림 효과가 여러 개면 가장 강한 정책 하나만 적용한다.
+
+#### Critical Hit 임계값
+
+가장 낮은 값을 적용한다.
+
+#### Lethal Hits
+
+하나라도 존재하면 `true`다.
+
+#### Sustained Hits
+
+- 동일한 값은 중복 허용한다.
+- 서로 다른 값은 자동 선택하지 않고 충돌 오류로 처리한다.
+- 고정값과 동등한 `fixed` 표현은 같은 값으로 취급한다.
+
+#### 중복 Ability
+
+Unit과 Weapon이 같은 Ability ID를 참조하면 한 번만 적용한다.
+
+---
+
+## 4. 계산 규칙 지침
 
 ### 재굴림
 
-```ts
-type RerollPolicy =
-  | { readonly kind: "none" }
-  | { readonly kind: "ones" }
-  | { readonly kind: "failures" };
-```
-
-- 재굴림은 최초 결과에 한 번만 적용한다.
-- 재굴림된 결과는 다시 재굴림하지 않는다.
+- 최초 결과에 한 번만 적용한다.
+- 재굴림 결과는 다시 재굴림하지 않는다.
 - 자연 1은 항상 실패다.
-- 실패 재굴림은 Critical Hit 판정 후 실패한 결과만 대상으로 한다.
 
-### Critical Hit 상태
+### Critical Hit
 
-```ts
-interface HitCountState {
-  readonly normalHits: number;
-  readonly criticalHits: number;
-}
-```
-
-Critical Hit은 일반 명중과 별도 상태로 유지한다.
-
----
-
-## 3. Sustained Hits와 Lethal Hits 지침
-
-### 공개 입력
-
-```ts
-type SustainedHitCount = number | DiceExpression;
-
-interface BattleInput {
-  sustainedHits?: SustainedHitCount;
-  lethalHits?: boolean;
-}
-```
-
-생략 시:
-
-```text
-sustainedHits  0
-lethalHits     false
-```
+일반 명중과 별도 상태로 유지한다.
 
 ### Sustained Hits
 
-- Critical Hit 하나마다 추가 명중 수를 독립적으로 결정한다.
-- 고정 숫자와 `DiceExpression`을 지원한다.
-- 현재 Critical Hit당 가능한 추가 명중 범위는 `0~6`이다.
-- 추가 명중은 일반 명중으로 취급한다.
-- 추가 명중은 새로운 명중 굴림이 아니며 Critical Hit을 발생시키지 않는다.
-- 규칙 적용 후 총 명중 수는 최대 600으로 제한한다.
+- Critical Hit마다 독립적으로 추가 명중 수를 결정한다.
+- 추가 명중은 일반 명중이다.
+- 추가 명중은 새로운 명중 굴림이 아니다.
 
 ### Lethal Hits
 
-- 원래 Critical Hit 하나마다 자동 상처 하나를 만든다.
-- 자동 상처는 상처 굴림과 상처 재굴림을 거치지 않는다.
-- 자동 상처도 이후 내성 굴림은 정상적으로 거친다.
-
-### 동시 적용
-
-```text
-original Critical Hit
-├─ automatic wound from Lethal Hits
-└─ extra normal hits from Sustained Hits → wound rolls
-```
-
-원래 Critical Hit과 추가 명중을 반드시 구분한다.
-
-### 규칙 적용 후 상태
-
-```ts
-interface ResolvedHitState {
-  readonly normalHits: number;
-  readonly criticalHits: number;
-  readonly sustainedHits: number;
-  readonly totalHits: number;
-  readonly woundRolls: number;
-  readonly automaticWounds: number;
-}
-```
-
-불변식:
-
-```text
-totalHits = normalHits + criticalHits + sustainedHits
-```
-
-Lethal Hits 적용 시:
-
-```text
-automaticWounds = criticalHits
-woundRolls = normalHits + sustainedHits
-```
-
-Lethal Hits 미적용 시:
-
-```text
-automaticWounds = 0
-woundRolls = normalHits + criticalHits + sustainedHits
-```
+- 원래 Critical Hit마다 자동 상처 하나를 만든다.
+- 자동 상처는 상처 굴림과 상처 재굴림을 건너뛴다.
+- 이후 내성 굴림은 정상적으로 적용한다.
 
 ---
 
-## 4. 계산 결과 지침
+## 5. 계산 결과 지침
 
 공개 결과:
 
@@ -166,90 +164,43 @@ stageBreakdown.expectedAutomaticWounds
 stageBreakdown.expectedWounds
 ```
 
-`hits`는 규칙 적용 후 총 명중 수다. `wounds`는 상처 굴림 성공과 자동 상처를 합친 값이다.
+`hits`는 Sustained Hits까지 적용된 총 명중 수다. `wounds`는 상처 굴림 성공과 자동 상처를 합친 값이다.
 
 ---
 
-## 5. 기존 계산 지침
+## 6. 테스트 지침
 
-- 공격 횟수는 `0~200`
-- 피해 결과는 `1~30`
-- 음수가 가능한 공격 표현은 거부
-- 실패한 내성마다 피해 주사위를 독립적으로 적용
-- 일반 피해의 초과 피해는 다음 모델로 전달하지 않음
-- 방어 상태는 파괴 모델 수, 현재 모델 잔여 운드와 전멸 여부로 병합
+### 스키마 테스트
 
----
+`packages/game-data-schema/src/validation.test.ts`:
 
-## 6. 게임 데이터 지침
+- 모든 Ability 효과 종류 파싱
+- 효과 없는 기존 Ability 호환
+- 잘못된 kind와 정책 거부
+- Critical Hit 임계값 범위
+- Sustained Hits 결과 범위
+- 효과 배열 동결
 
-정규화된 엔티티:
+### 합성 테스트
 
-```text
-Alliance
-Faction
-Unit
-ModelProfile
-WeaponProfile
-Ability
-```
+`apps/web/src/data/ability-rules.test.ts`:
 
-- ID는 소문자 kebab-case
-- 표시 이름을 참조 키로 사용하지 않음
-- 중복 ID와 누락 참조는 카탈로그 전체 오류
-- JSON은 `unknown`으로 받아 `parseGameDataCatalog`를 통과한 뒤 사용
-- 현재 `Ability`는 이름과 설명만 있고 계산 효과는 아직 없음
+- Unit·Weapon 효과 수집 순서
+- 중복 Ability ID 제거
+- 재굴림 강도 선택
+- Critical Hit 임계값 선택
+- Lethal Hits 합성
+- 동일 Sustained Hits 허용
+- 상충 Sustained Hits 거부
+- 누락 Ability 거부
+- 실제 샘플 카탈로그 연결
 
-다음 Ability 확장은 임의 JavaScript를 허용하지 않고 선언형 효과만 저장한다.
+### 회귀 테스트
 
-예상 방향:
-
-```ts
-type AbilityEffect =
-  | { kind: "hit-reroll"; policy: RerollPolicy }
-  | { kind: "wound-reroll"; policy: RerollPolicy }
-  | { kind: "critical-hit-threshold"; value: number }
-  | { kind: "sustained-hits"; extraHits: SustainedHitCount }
-  | { kind: "lethal-hits" };
-```
-
----
-
-## 7. 테스트 지침
-
-### Critical Hit 효과 단위 테스트
-
-`critical-hit-effects.test.ts`:
-
-- 효과 없음
-- 고정 Sustained Hits
-- 가변 Sustained Hits의 독립 반복
-- Lethal Hits 자동 상처
-- 두 능력 동시 적용
-- 잘못된 범위와 타입 거부
-- 총 명중 상한 검증
-
-### 전투 통합 테스트
-
-`critical-hit-abilities.test.ts`:
-
-- 명시적 비활성 값과 생략 기본값의 동일성
-- Sustained Hits 기대값
-- 가변 Sustained Hits 분포
-- Lethal Hits 자동 상처 기대값
-- 두 능력의 경로 분리
-- 자동 상처에 상처 재굴림이 적용되지 않는지 검증
-- 공개 분포 정규화와 상태 유일성
-- 능력 추가 시 평균 피해 비감소
-
-### 기존 검증
-
-- 골든 테스트
-- 재굴림 확률
+- 기존 계산기 골든 테스트
 - 공개 분포 정규화
-- 결정성과 단조성
-- non-spill 피해 할당
-- 외부 데이터 값·참조 검증
+- 실제 JSON 전체 참조 검증
+- 웹 프로덕션 빌드
 
 검사 명령:
 
@@ -259,7 +210,7 @@ npm run check
 
 ---
 
-## 8. 현재 구현 상태
+## 7. 현재 구현 상태
 
 ### 계산 엔진
 
@@ -272,54 +223,54 @@ npm run check
 | Critical Hit | ✅ | 결합분포와 임계값 |
 | Sustained Hits | ✅ | 고정·가변 추가 명중 |
 | Lethal Hits | ✅ | 자동 상처 경로 |
-| 두 능력 동시 적용 | ✅ | 원래 Critical과 추가 명중 분리 |
 | Critical Wound | ⬜ | 후속 단계 |
 
-### 데이터
+### 데이터와 해석
 
 | 항목 | 상태 | 현재 내용 |
 |---|---:|---|
 | 정규화 스키마 | ✅ | Unit, Model, Weapon, Ability |
-| 외부 JSON | ✅ | 샘플 카탈로그 |
-| 런타임 검증 | ✅ | 값·필드·ID·참조 |
-| Ability 효과 연결 | ⬜ | 다음 단계 |
+| AbilityEffect | ✅ | 선언형 union |
+| 효과 런타임 검증 | ✅ | 종류·필드·범위 |
+| Unit·Weapon 효과 합성 | ✅ | 별도 순수 함수 |
+| 외부 JSON | ✅ | 샘플 Ability 데이터 |
 | manifest·IndexedDB | ⬜ | 후속 단계 |
 
-### 배포
+### UI
 
 | 항목 | 상태 | 현재 내용 |
 |---|---:|---|
-| 루트 lockfile | ✅ | npm lockfile v3 |
-| CI | ✅ | `npm ci`, 타입 검사, 테스트, 빌드 |
-| Pages | ✅ | 잠긴 의존성으로 배포 |
+| 활성 Ability 이름 | ✅ | Unit·Weapon 합성 결과 |
+| Ability 계산 적용 | ✅ | `BattleInput` 연결 |
+| 규칙별 상세 결과 | ⬜ | 다음 단계 |
 
 ---
 
-## 9. 다음 개발 우선순위
+## 8. 다음 개발 우선순위
 
-1. `AbilityEffect` 선언형 union
-2. Ability 효과 런타임 검증
-3. Unit·Weapon Ability 효과 수집
-4. 효과 충돌·중첩 합성 정책
-5. 계산 규칙 객체 생성
-6. 웹 UI 규칙 표시
+1. 일반 명중과 Critical Hit 평균 분리 표시
+2. Sustained 추가 명중 표시
+3. 상처 굴림 수와 자동 상처 표시
+4. 활성 Ability별 적용 규칙 요약
+5. 불필요한 0값 단계의 표시 정책
+6. 모바일 결과 카드 길이 검증
 
 ---
 
-## 10. 기능 추가 체크리스트
+## 9. 기능 추가 체크리스트
 
 - [ ] 규칙 적용 시점을 정의했다.
-- [ ] 원래 굴림과 자동 생성 결과를 구분했다.
+- [ ] 데이터 효과와 계산 효과의 경계를 분리했다.
+- [ ] 효과 충돌 정책을 정의했다.
 - [ ] 정상·경계·오류 테스트를 추가했다.
-- [ ] 기존 미적용 입력의 완전 호환성을 검증했다.
+- [ ] 기존 미적용 입력의 호환성을 검증했다.
 - [ ] 모든 공개 분포 정규화를 검증했다.
-- [ ] 데이터 변경 시 스키마와 참조 검증을 갱신했다.
 - [ ] 관련 문서를 갱신했다.
 - [ ] `npm ci` 이후 `npm run check`를 통과했다.
 
 ---
 
-## 11. 문서 갱신 규칙
+## 10. 문서 갱신 규칙
 
 - 구현 상태: `development-guide.md`, `roadmap.md`
 - 구조와 기술 결정: `technical-design.md`
