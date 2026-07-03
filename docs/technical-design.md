@@ -1,6 +1,6 @@
 # Dice Servitor 기술 설계서
 
-- 문서 상태: v0.13
+- 문서 상태: v0.14
 - 기준일: 2026-07-04
 - 대상 저장소: `chojh1027/40kCalculator`
 - 관련 문서: [`proposal.md`](./proposal.md), [`roadmap.md`](./roadmap.md), [`development-guide.md`](./development-guide.md)
@@ -24,7 +24,9 @@ React Web UI
        └─ battle and damage-allocation pipeline
 ```
 
-- `packages/calculator`: 순수 확률 계산
+모듈 책임:
+
+- `packages/calculator`: 순수 확률 계산과 피해 할당
 - `packages/game-data-schema`: 데이터 타입과 런타임 검증
 - `apps/web/src/data/catalog.ts`: 검증된 카탈로그 접근
 - `apps/web/src/data/ability-rules.ts`: Unit·Weapon Ability 효과 합성
@@ -52,6 +54,13 @@ React Web UI
 - Ability 해석 계층은 `BattleInput` 규칙 필드를 만든다.
 - 결과 표시 계층은 `CalculationResult`를 다시 계산하지 않는다.
 - React 컴포넌트는 뷰 모델이 제공한 순서와 조건만 렌더링한다.
+
+### 정적 호스팅 독립성
+
+- 애플리케이션은 정적 빌드 산출물로 배포한다.
+- Vite는 상대 경로 배포를 위해 `base: "./"`를 사용한다.
+- 현재 GitHub Pages는 시험 환경이며 최종 호스팅 사업자는 확정되지 않았다.
+- 데이터 릴리스와 캐시 설계는 특정 호스팅 사업자의 전용 기능에 의존하지 않는다.
 
 ### 하위 호환성
 
@@ -154,6 +163,10 @@ interface ResolvedHitState {
 
 `automaticWounds`는 상처 굴림을 건너뛴 상처다. 내성 굴림이나 피해 적용을 건너뛰지 않는다.
 
+### Sustained Hits 의미
+
+원래 Critical Hit마다 추가 명중을 생성한다. 추가 명중은 일반 명중이며 새로운 명중 굴림이나 새로운 Critical Hit 판정을 만들지 않는다.
+
 ### non-spill 피해
 
 일반 피해는 현재 모델의 남은 운드를 초과해도 다음 모델로 전달되지 않는다. 실패 내성마다 결정된 피해를 순서대로 현재 생존 모델에 적용한다.
@@ -188,7 +201,7 @@ interface CalculationResult {
 }
 ```
 
-`destroyedModelDistribution`에는 정확히 N개 파괴 확률과 N개 이상 파괴 누적 확률이 모두 존재한다. 현재 UI는 이 전체 표를 아직 직접 노출하지 않는다.
+`destroyedModelDistribution`에는 정확히 N개 파괴 확률과 N개 이상 파괴 누적 확률이 모두 존재한다. 현재 UI는 이 전체 표를 직접 노출하지 않는다.
 
 ## 7. Ability 효과 모델
 
@@ -201,7 +214,7 @@ type AbilityEffect =
   | { kind: "lethal-hits" };
 ```
 
-검증 범위:
+런타임 검증:
 
 | 효과 | 검증 |
 |---|---|
@@ -300,8 +313,6 @@ buildResultStageGroups(
 ): readonly ResultStageGroup[]
 ```
 
-### ResultStageDescriptor
-
 ```ts
 interface ResultStageDescriptor {
   readonly key: string;
@@ -313,7 +324,7 @@ interface ResultStageDescriptor {
 }
 ```
 
-### 결과 그룹
+결과 그룹:
 
 ```text
 Attacks
@@ -388,7 +399,7 @@ Wound re-roll
 - 확률 라벨 열은 작은 화면에서 축소한다.
 - Applied Rules는 줄바꿈 가능한 태그 목록이다.
 
-## 14. CI와 배포
+## 14. CI와 시험 배포
 
 ### 로컬 개발
 
@@ -409,7 +420,7 @@ PR 또는 main push
 → npm run check
 ```
 
-### GitHub Pages
+### 현재 GitHub Pages 시험 배포
 
 `.github/workflows/deploy-pages.yml`:
 
@@ -422,7 +433,13 @@ main push 또는 workflow_dispatch
 → actions/deploy-pages
 ```
 
-Vite는 상대 경로 배포를 위해 `base: "./"`를 사용한다.
+GitHub Pages는 현재 배포 동작 검증용 환경이다. 시험 후 유지 또는 다른 정적 호스팅으로 전환한다. 최종 호스팅이 바뀌더라도 다음 계약은 유지한다.
+
+- 정적 빌드 산출물 사용
+- 브라우저 내 계산
+- 상대 경로 자산
+- CI에서 동일한 `npm run check` 실행
+- 배포 전에 전체 빌드 성공 확인
 
 ## 15. 테스트 구조
 
@@ -494,7 +511,8 @@ versions.json
 - 파일 해시와 스키마 검증을 모두 통과해야 한다.
 - 공통 엔티티와 진영 엔티티의 참조 범위를 정의해야 한다.
 - 브라우저 저장소가 비어 있거나 손상된 경우 네트워크 원본으로 복구해야 한다.
-- GitHub Pages 정적 배포 구조를 유지해야 한다.
+- 정적 파일 제공이 가능한 호스팅 환경에서 동작해야 한다.
+- 호스팅 사업자 전용 API를 필수 경로로 사용하지 않는다.
 
 이 계층은 아직 구현되지 않았다.
 
@@ -509,7 +527,8 @@ versions.json
 - 상처 굴림과 자동 상처 상세 UI
 - 적용 규칙 태그
 - 모바일 접기형 결과 구조
-- 자동 CI와 GitHub Pages 배포
+- 자동 CI
+- GitHub Pages 시험 배포 workflow
 
 다음 단계:
 
@@ -518,10 +537,14 @@ versions.json
 - 파일 해시 검증
 - IndexedDB 저장과 복구
 
+병행 검증:
+
+- GitHub Pages 시험 배포 테스트
+- 최종 정적 호스팅 환경 결정
+
 후속 미구현:
 
 - Critical Wound와 Mortal Wounds
 - 피해 감소와 Feel No Pain
 - 복수 공격 그룹
 - 검색, 프리셋과 다국어
-- 공식 전체 게임 데이터

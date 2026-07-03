@@ -1,6 +1,6 @@
 # Dice Servitor 개발 로드맵
 
-- 문서 상태: v0.14
+- 문서 상태: v0.15
 - 기준일: 2026-07-04
 - 대상 저장소: `chojh1027/40kCalculator`
 - 관련 문서: [프로젝트 프로포절](./proposal.md), [기술 설계서](./technical-design.md), [개발 지침 및 진행 현황](./development-guide.md)
@@ -12,7 +12,7 @@
 ## 1. 상태 표기
 
 - ✅ 완료
-- 🟡 진행 중
+- 🟡 진행 중 또는 검증 중
 - ⬜ 미구현
 
 ---
@@ -34,7 +34,8 @@
 - 규칙별 상세 결과와 확률분포 UI
 - 외부 JSON 게임 데이터와 런타임 검증
 - 골든·불변식·규칙·표시 정책 테스트
-- 루트 lockfile과 `npm ci` 기반 CI·GitHub Pages 배포
+- 루트 lockfile과 `npm ci` 기반 CI
+- GitHub Pages 자동 시험 배포
 
 현재 샘플 카탈로그:
 
@@ -48,15 +49,6 @@
 ```
 
 현재 데이터는 구조와 계산 경로 검증용 자체 작성 샘플이며 공식 전체 게임 데이터가 아니다.
-
-결과 표시 흐름:
-
-```text
-CalculationResult
-→ result-view.ts 표시 모델
-→ 규칙별 조건부 단계 구성
-→ DetailedResults.tsx 접기형 결과 카드
-```
 
 ### 완료된 기반
 
@@ -76,7 +68,8 @@ CalculationResult
 | 외부 JSON·검증 | ✅ | 값·ID·참조·효과 무결성 |
 | 재현 가능한 설치 | ✅ | lockfile v3, `npm ci` |
 | CI | ✅ | PR·main에서 Node.js 24 검사 |
-| 정적 배포 | ✅ | GitHub Pages 자동 배포 |
+| 정적 배포 자동화 | ✅ | GitHub Pages workflow |
+| 호스팅 플랫폼 확정 | 🟡 | Pages 시험 후 유지·전환 결정 |
 
 ### 현재 핵심 제약
 
@@ -85,6 +78,7 @@ CalculationResult
 - 데이터 manifest, 진영별 청크와 IndexedDB가 없다.
 - 현재 데이터는 단일 JSON 샘플 카탈로그다.
 - 검색, 프리셋, URL 공유와 다국어가 없다.
+- 최종 운영 호스팅 환경이 확정되지 않았다.
 
 ---
 
@@ -94,8 +88,8 @@ CalculationResult
 
 상태: ✅ 완료
 
-- 문서 동기화
-- PMF
+- 문서와 구현 상태 동기화
+- PMF 코어
 - `DiceExpression`
 - 가변 공격
 - 가변 피해와 non-spill
@@ -170,21 +164,38 @@ Saves and Damage
 - 모든 단계는 접기형 카드로 유지
 - 모바일에서 라벨 폭과 카드 간격 조정
 
-표시 정책은 React 컴포넌트와 분리된 순수 함수로 테스트한다.
-
 ### 문서 감사 및 재동기화
 
 상태: ✅ 완료
 
-2026-07-04에 다음 항목을 재검증했다.
+2026-07-04에 다음 항목을 실제 구현과 대조했다.
 
 - 서비스명 Dice Servitor 반영
-- Cloudflare Pages 계획 문구를 실제 GitHub Pages 배포로 수정
-- 완료 기능과 계획 기능의 구분
+- 완료 기능과 계획 기능 구분
 - 샘플 데이터의 성격과 규모
 - CI Node.js 버전과 로컬 Node.js 지원 범위
-- Automatic Wounds와 총 Wounds의 의미
+- Automatic Wounds와 총 Wounds 의미
 - 다음 단계가 데이터 릴리스·IndexedDB임을 문서 전체에 통일
+- 존재하지 않는 파일명과 오래된 배포 설명 제거
+
+### GitHub Pages 시험 배포 평가
+
+상태: 🟡 진행 중
+
+구현 완료:
+
+- `main` push 기반 Pages 빌드·배포 workflow
+- Node.js 24, `npm ci`, `npm run check`
+- `apps/web/dist` artifact 배포
+- Vite 상대 경로 `base: "./"`
+
+평가 후 결정:
+
+- GitHub Pages 유지 여부
+- 다른 정적 호스팅으로 전환 여부
+- 캐시와 데이터 갱신 제어 적합성
+- 직접 접근·새로고침·모바일 동작
+- 성능, 운영 편의성과 비용
 
 ---
 
@@ -266,7 +277,7 @@ Saves and Damage
 - 파일 해시를 검증한 뒤에만 활성 버전을 교체한다.
 - 마지막 정상 데이터를 IndexedDB에 보관한다.
 - 데이터 갱신 실패 시 기존 정상 버전으로 복구한다.
-- 정적 배포와 GitHub Pages 환경을 유지한다.
+- 특정 호스팅 사업자에 종속되지 않는 정적 파일 구조를 사용한다.
 
 ---
 
@@ -281,6 +292,14 @@ build
 test
 release
 ```
+
+목표:
+
+- 원본 데이터 검증
+- 이전 릴리스와 차이 비교
+- 배포용 청크와 manifest 생성
+- 해시 생성
+- 릴리스 전 계산 회귀 테스트
 
 ---
 
@@ -314,15 +333,20 @@ release
 | 12 | 데이터 릴리스와 IndexedDB | ⬜ |
 | 13 | 데이터 CLI와 다국어 | ⬜ |
 
+병행 검증 작업:
+
+- GitHub Pages 시험 배포 테스트
+- 시험 결과에 따른 호스팅 유지·전환 결정
+
 다음 개발 작업은 **데이터 릴리스 manifest, 진영별 청크와 IndexedDB 저장 계층을 구현하는 것**이다.
 
 ---
 
 ## 12. 문서 갱신 규칙
 
-- 구현 상태와 다음 순서: `roadmap.md`
-- 개발 원칙과 테스트 기준: `development-guide.md`
+- 구현 상태: `roadmap.md`, `development-guide.md`
 - 구조와 기술 결정: `technical-design.md`
-- 제품 목적과 범위: `proposal.md`
-- 실행·사용 방법: `README.md`
+- 제품 범위와 완료 기준: `proposal.md`
+- 실행 방법과 현재 사용법: `README.md`
+- 시험 환경과 확정 운영 환경을 구분한다.
 - 계획만 존재하는 기능을 완료로 표시하지 않는다.
