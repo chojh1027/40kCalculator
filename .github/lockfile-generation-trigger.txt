@@ -1,1 +1,1 @@
-Temporary file used to trigger the lockfile generation workflow after workflow update.
+Temporary file used to trigger lockfile generation with untracked-file detection.
