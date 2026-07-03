@@ -1,6 +1,6 @@
 # Dice Servitor 기술 설계서
 
-- 문서 상태: v0.4
+- 문서 상태: v0.5
 - 기준일: 2026-07-03
 - 관련 문서: [`proposal.md`](./proposal.md), [`roadmap.md`](./roadmap.md), [`development-guide.md`](./development-guide.md)
 - 목적: 제품 목표를 실제 개발 가능한 계산·데이터·배포 구조로 구체화한다.
@@ -72,10 +72,13 @@
 
 ```ts
 import {
+  allocateDamagePmf,
   attackCountToPmf,
   calculateBattle,
+  damageAmountToPmf,
   repeatAttackCount,
   type AttackCount,
+  type DamageAmount,
 } from "@40k-calculator/calculator";
 import { Pmf } from "@40k-calculator/calculator/pmf";
 import {
@@ -87,7 +90,7 @@ import {
 
 ## 4. 전투 입력 모델
 
-현재 MVP의 단일 공격 그룹은 숫자 또는 `DiceExpression` 공격 횟수와 고정 피해를 사용한다. 숫자 공격 입력은 기존 호출부의 하위 호환성을 위해 유지한다.
+현재 MVP의 단일 공격 그룹은 숫자 또는 `DiceExpression` 공격 횟수와 피해를 사용한다. 숫자 입력은 기존 호출부의 하위 호환성을 위해 유지한다.
 
 ```ts
 interface FixedDiceExpression {
@@ -104,33 +107,20 @@ interface RolledDiceExpression {
 
 type DiceExpression = FixedDiceExpression | RolledDiceExpression;
 type AttackCount = number | DiceExpression;
+type DamageAmount = number | DiceExpression;
 
 interface BattleInput {
   attacks: AttackCount;
   skill: number;
   strength: number;
   armorPenetration: number;
-  damage: number;
+  damage: DamageAmount;
   targetToughness: number;
   targetSave: number;
   targetInvulnerableSave?: number;
   targetWounds: number;
   targetModelCount: number;
 }
-```
-
-표현 예시:
-
-```ts
-const fixedFour: DiceExpression = { kind: "fixed", value: 4 };
-const d3: DiceExpression = { kind: "dice", count: 1, sides: 3 };
-const d6: DiceExpression = { kind: "dice", count: 1, sides: 6 };
-const twoD6PlusOne: DiceExpression = {
-  kind: "dice",
-  count: 2,
-  sides: 6,
-  modifier: 1,
-};
 ```
 
 ### 주사위 표현 불변식
@@ -140,14 +130,16 @@ const twoD6PlusOne: DiceExpression = {
 - 주사위 면 수는 2~100이다.
 - 보정치는 안전한 정수다.
 - 가능한 최솟값이 0보다 작아지는 표현은 허용하지 않는다.
-- 공격 횟수는 계산 단계에서 0~200 범위를 추가로 검증한다.
-- 피해량은 향후 가변 피해 통합 시 1 이상의 결과만 허용한다.
+- 공격 횟수는 계산 단계에서 0~200 범위를 적용한다.
+- 개별 피해 결과는 계산 단계에서 1~30 범위를 적용한다.
 
-`diceExpressionBounds`는 가능한 최솟값과 최댓값을 반환한다. `diceExpressionToPmf`는 표현을 정확한 `Pmf<number>`로 변환한다. `attackCountToPmf`는 숫자 입력을 확정 분포로 바꾸고 공격 횟수 의미 범위를 적용한다.
+`diceExpressionBounds`는 가능한 최솟값과 최댓값을 반환한다. `diceExpressionToPmf`는 표현을 정확한 `Pmf<number>`로 변환한다.
 
-`repeatAttackCount(attacks, repetitions)`는 모델별 공격 표현을 독립적으로 반복한다. 숫자와 고정값은 곱셈으로 처리하고, `D6`을 5회 반복하면 `5D6`, `2D6+1`을 3회 반복하면 `6D6+3`으로 변환한다. 반복 결과는 다시 공격 횟수 범위와 주사위 표현 범위를 검증한다.
+`attackCountToPmf`는 공격 의미 범위를 적용하고, `damageAmountToPmf`는 피해 의미 범위를 적용한다. 두 함수 모두 숫자 입력을 확률 1의 확정 분포로 변환한다.
 
-다음 단계에서는 `BattleInput.damage`도 `number | DiceExpression`으로 확장한다. 이후 공격자, 방어자, 복수 공격 그룹, 전역 효과와 데이터 릴리스 ID를 포함하는 `BattleContext`로 확장한다.
+`repeatAttackCount(attacks, repetitions)`는 모델별 공격 표현을 독립적으로 반복한다. `D6`을 5회 반복하면 `5D6`, `2D6+1`을 3회 반복하면 `6D6+3`으로 변환한다. 피해 표현은 모델 수로 반복하지 않는다.
+
+후속 단계에서는 공격자, 방어자, 복수 공격 그룹, 전역 효과와 데이터 릴리스 ID를 포함하는 `BattleContext`로 확장한다.
 
 ## 5. 공통 PMF 모델
 
@@ -172,8 +164,6 @@ interface PmfEntry<T> {
 
 원시값은 값 자체를 상태 키로 사용한다. 객체 상태는 명시적인 `PmfKeySelector`를 제공해야 한다.
 
-주사위 분포는 한 개의 균등분포를 만든 뒤 `repeat`로 합성한다. 예를 들어 `2D6+1`은 초기 누적값 1에서 D6 분포를 두 번 더한다.
-
 ## 6. 계산 파이프라인
 
 현재 계산 파이프라인:
@@ -181,36 +171,22 @@ interface PmfEntry<T> {
 ```text
 무장의 모델당 공격 표현
 → 공격 모델 수만큼 독립 반복
-→ 숫자 또는 DiceExpression 공격 횟수를 PMF로 변환
-→ 공격 횟수별 명중 이항분포를 조건부 합성
-→ 공격 횟수별 상처 이항분포를 조건부 합성
-→ 공격 횟수별 실패 내성 이항분포를 조건부 합성
-→ 고정 피해 적용
-→ 모델별 피해 할당
-→ 동일 방어 상태 확률 병합
-→ 공격·명중·상처·실패 내성·최종 상태 분포와 결과 요약
-```
-
-가변 피해 통합 후 목표 파이프라인:
-
-```text
-입력 검증
-→ 공격 횟수 PMF
-→ 명중 분포
-→ 상처 분포
-→ 실패 내성 분포
-→ 피해 DiceExpression을 PMF로 변환
-→ 실패한 내성마다 피해 PMF 적용
+→ 공격 횟수 PMF 변환
+→ 공격 횟수별 명중 이항분포 합성
+→ 공격 횟수별 상처 이항분포 합성
+→ 공격 횟수별 실패 내성 이항분포 합성
+→ 피해 표현 PMF 변환
+→ 실패한 내성마다 독립 피해 PMF 적용
 → 모델별 피해 상태 전이
-→ 동일 상태 확률 병합
-→ 결과 요약
+→ 동일 방어 상태 병합
+→ 결과 분포와 요약
 ```
 
 ### 공격 횟수
 
-`attackCountToPmf`는 기존 숫자 공격 횟수를 확률 1의 PMF로 바꾸거나 `DiceExpression`을 정확한 공격 횟수 PMF로 변환한다. 공개 결과의 `stageDistributions.attacks`는 이 분포를 정렬된 값-확률 목록으로 제공한다.
+`attackCountToPmf`는 숫자 공격 횟수를 확률 1의 PMF로 바꾸거나 `DiceExpression`을 정확한 공격 횟수 PMF로 변환한다. `stageDistributions.attacks`는 이 분포를 정렬된 값-확률 목록으로 제공한다.
 
-웹 카탈로그의 `Weapon.attacks`는 모델당 `AttackCount`다. UI는 선택한 모델 수를 `repeatAttackCount`에 전달해 전체 공격 표현을 만들고 계산 엔진에 전달한다. 예를 들어 `D6 Test Blaster (Temporary)`를 모델 5명이 사용하면 전체 공격 표현은 `5D6`이다.
+웹 카탈로그의 `Weapon.attacks`는 모델당 `AttackCount`다. UI는 선택한 모델 수를 `repeatAttackCount`에 전달해 전체 공격 표현을 만든다.
 
 ### 명중
 
@@ -228,17 +204,28 @@ interface PmfEntry<T> {
 - `S <= T/2`: 6+
 - 그 외: 5+
 
-상처 분포는 공격 횟수마다 명중과 상처 성공 확률의 곱을 사용한 이항분포를 계산한 뒤 합성한다. 현재 기본 규칙에서는 단계별 재굴림과 치명타 상태가 없으므로 이 계산은 명중 후 상처의 순차 확률과 동일하다.
+현재 기본 규칙에서는 재굴림과 치명타 상태가 없으므로 공격 한 번이 상처를 만드는 확률을 명중 확률과 상처 확률의 곱으로 계산할 수 있다.
 
 ### 내성
 
 장갑 내성에 AP를 적용한 결과와 무적 내성 중 더 좋은 값을 사용한다. 7+ 이상은 성공 불가능한 내성으로 취급한다.
 
-실패 내성 분포 역시 공격 횟수마다 공격 한 번이 최종적으로 실패 내성을 만들 확률을 사용한 이항분포를 계산하고 합성한다.
+실패 내성 분포는 공격 한 번이 명중·상처·내성 실패까지 도달할 확률을 사용한 조건부 이항분포다.
 
-### 피해 할당
+### 피해 PMF
 
-일반 공격의 초과 피해는 다음 모델로 전달하지 않는다. 각 실패한 내성은 독립적인 피해 이벤트이며, 이미 피해를 입은 모델에 다음 피해 이벤트를 순서대로 적용한다.
+`damageAmountToPmf`는 숫자 또는 `DiceExpression` 피해를 `Pmf<number>`로 변환한다. 공개 결과는 다음 항목을 제공한다.
+
+```ts
+stageDistributions.damagePerFailedSave
+stageBreakdown.expectedDamagePerFailedSave
+```
+
+이 값은 실패한 내성 하나에 적용되는 원래 피해 주사위 분포다. 모델 운드와 초과 피해 손실을 반영한 최종 유효 피해는 `effectiveDamage` 분포에서 별도로 계산한다.
+
+### 피해 상태 전이
+
+방어 상태:
 
 ```ts
 interface DefenderDamageState {
@@ -248,9 +235,23 @@ interface DefenderDamageState {
 }
 ```
 
-현재는 실패 내성 개수 PMF를 고정 피해 할당 함수에 매핑한다. 동일한 방어 상태에 도달하는 경로는 `destroyedModels`, `currentModelRemainingWounds`, `unitDestroyed`로 구성한 상태 키를 사용해 병합한다.
+각 실패한 내성은 독립 피해 이벤트다. 상태 전이는 다음 순서로 처리한다.
 
-가변 피해는 실패한 내성마다 피해 PMF를 적용해야 한다. 이 경우 각 피해 이벤트 후의 방어 상태를 다음 이벤트 입력으로 전달하고 동일 상태를 계속 병합한다.
+1. 현재 모델의 잔여 운드에서 피해 값을 뺀다.
+2. 잔여 운드가 양수면 같은 모델 상태를 유지한다.
+3. 잔여 운드가 0 이하이면 모델 하나를 파괴한다.
+4. 초과 피해는 버리고 다음 모델은 전체 운드에서 시작한다.
+5. 마지막 모델이 파괴되면 전멸 상태로 전환한다.
+
+`buildDamageAllocationPmfs`는 0회부터 최대 실패 내성 수까지의 상태 PMF를 순차적으로 만든다. 이전 이벤트 수의 PMF를 재사용하므로 각 실패 내성 수마다 처음부터 다시 계산하지 않는다.
+
+동일 상태 키:
+
+```text
+destroyedModels : currentModelRemainingWounds : unitDestroyed
+```
+
+이 키를 사용해 서로 다른 피해 주사위 경로가 같은 방어 상태에 도달하면 확률을 병합한다.
 
 ## 7. 계산 결과
 
@@ -264,21 +265,27 @@ interface CalculationResult {
   };
   outcomeDistribution: OutcomeProbability[];
   destroyedModelDistribution: DestroyedModelProbability[];
-  stageDistributions: StageDistributions;
-  stageBreakdown: StageBreakdown;
+  stageDistributions: {
+    attacks: ValueProbability[];
+    hits: ValueProbability[];
+    wounds: ValueProbability[];
+    failedSaves: ValueProbability[];
+    damagePerFailedSave: ValueProbability[];
+    effectiveDamage: ValueProbability[];
+    destroyedModels: ValueProbability[];
+  };
 }
 ```
 
 결과 화면은 다음 값을 우선 표시한다.
 
 - 평균 공격 횟수와 공격 횟수 분포
+- 평균 명중·상처·실패 내성
+- 실패 내성당 평균 피해와 피해 주사위 분포
 - 평균 유효 피해
 - 평균 파괴 모델 수
 - 가장 가능성이 높은 피해 상태
 - 방어 유닛 전멸 확률
-- 정확히 N개 모델을 파괴할 확률
-- N개 이상 모델을 파괴할 누적 확률
-- 단계별 명중·상처·실패 내성 분포와 기대값
 
 정규분포를 가정하지 않으며 실제 이산 확률분포를 사용한다.
 
@@ -298,7 +305,14 @@ DataRelease
 TranslationEntry
 ```
 
-현재 샘플 `Weapon.attacks`는 `AttackCount`를 사용한다. `D6 Test Blaster (Temporary)`는 UI와 계산 경로 검증용이며 공식 데이터 출처를 가진 정식 프로필이 아니다.
+현재 샘플 `Weapon.attacks`는 `AttackCount`, `Weapon.damage`는 `DamageAmount`를 사용한다.
+
+임시 검증 무장:
+
+- `D6 Test Blaster (Temporary)`: 모델당 D6 공격
+- `D6 Damage Cannon (Temporary)`: 공격 1, 피해 D6
+
+두 프로필은 공식 데이터 출처를 가진 정식 프로필이 아니다.
 
 게임 데이터에는 출처, 규칙 버전, 적용 시작일과 마지막 수정일을 기록한다. 데이터는 공통 규칙과 진영별 청크로 분할한다.
 
@@ -341,11 +355,11 @@ generated-data/
 - PMF 독립·조건부·반복 합성
 - 고정값, D3와 D6 분포
 - 복수 주사위와 보정치 분포
-- 숫자 공격과 고정 `DiceExpression`의 회귀 동일성
-- D6와 `2D6+1` 공격 횟수 분포 및 기대값
+- 숫자와 고정 `DiceExpression`의 공격·피해 회귀 동일성
 - 모델별 D6 공격 반복과 보정치 반복
 - 공격 횟수별 명중·상처·내성 혼합 분포
-- 명중·상처·내성 확률
+- D6 피해 한 번의 상태 분포
+- 여러 실패 내성에 대한 독립 피해 이벤트
 - 일반 피해의 초과 피해 비전달
 - 다중 운드 모델 피해 할당
 - 동일 입력의 결정성
@@ -355,14 +369,23 @@ generated-data/
 
 대표 전투 조합의 입력과 예상 결과를 파일로 보관하고 계산 엔진 변경 시 회귀 여부를 확인한다.
 
+우선 대상:
+
+- 고정 공격 + 고정 피해
+- D6 공격 + 고정 피해
+- 고정 공격 + D3 피해
+- 고정 공격 + D6 피해
+- D6 공격 + D6 피해
+
 ### 속성 기반 테스트 방향
 
 - 모든 확률은 0 이상 1 이하
 - 전체 확률 합은 1
 - 표현의 모든 결과는 선언된 최소·최대 범위 안에 있음
-- 공격 수가 0이면 피해도 0
+- 공격 수가 0이면 최종 피해도 0
 - 방어 내성이 개선되면 평균 피해가 증가하지 않음
 - 방어 모델 수가 증가하면 전멸 확률이 증가하지 않음
+- 일반 피해 이벤트 하나가 모델 두 개 이상을 파괴하지 않음
 
 ## 11. CI/CD
 
@@ -380,13 +403,14 @@ Pull Request와 `main` 변경 시 다음 검사를 수행한다.
 ## 12. 단계별 구현 계획
 
 1. **계산 코어**: PMF, 주사위 표현, 기본 전투 단계, 피해 할당
-2. **가변 공격·피해**: 가변 공격과 임시 UI 검증 완료, 가변 피해와 상태 전이 통합 진행
-3. **기본 웹 UI**: 프리셋 선택, 결과 요약, 확률 막대그래프
-4. **외부 데이터와 스키마**: 고유 ID, 런타임 검증, 진영별 JSON
-5. **릴리스와 로컬 저장**: manifest, IndexedDB, 버전 전환
-6. **데이터 갱신 도구와 배포**: validate/diff/build/test/release
-7. **규칙 확장**: 재굴림, 치명타, 피해 감소, Feel No Pain
-8. **다국어 및 사용성**: 한국어·영어 리소스, 검색, 프리셋과 공유 링크
+2. **가변 공격·피해**: 가변 공격과 가변 피해 상태 전이 완료
+3. **검증 강화**: 골든 테스트, 확률 불변식과 단조성 테스트
+4. **기본 웹 UI**: 프리셋 선택, 결과 요약, 확률 막대그래프
+5. **외부 데이터와 스키마**: 고유 ID, 런타임 검증, 진영별 JSON
+6. **릴리스와 로컬 저장**: manifest, IndexedDB, 버전 전환
+7. **데이터 갱신 도구와 배포**: validate/diff/build/test/release
+8. **규칙 확장**: 재굴림, 치명타, 피해 감소, Feel No Pain
+9. **다국어 및 사용성**: 한국어·영어 리소스, 검색, 프리셋과 공유 링크
 
 ## 13. 현재 구현 범위
 
@@ -395,24 +419,20 @@ Pull Request와 `main` 변경 시 다음 검사를 수행한다.
 - UI와 분리된 TypeScript 계산 엔진
 - 공통 `Pmf<T>` 자료구조
 - `DiceExpression` 타입, 범위 검증과 PMF 변환
-- 고정값, D3, D6와 복수 주사위 분포
 - 숫자 또는 `DiceExpression` 기반 가변 공격 횟수
 - 모델 수에 따른 독립 공격 표현 반복
-- 공격 횟수별 명중·상처·내성·최종 상태 PMF 합성
-- `stageDistributions.attacks`와 평균 공격 횟수
-- 임시 D6 무장 선택, 프로필 표시와 공격 분포 UI
-- 단일 공격 그룹의 고정 피해
+- 숫자 또는 `DiceExpression` 기반 가변 피해
+- 실패 내성별 독립 피해 이벤트와 non-spill 상태 전이
+- 공격 횟수별 명중·상처·내성·피해·최종 상태 PMF 합성
+- 공격 및 피해 주사위 분포 UI
 - 기본 명중·상처·내성·무적 내성
-- 일반 피해의 non-spill 처리
 - 다중 운드 모델 피해 할당
 - 평균 피해, 평균 파괴 모델 수, 최빈 상태, 전멸 확률
-- 모델 파괴 이산 확률분포
 - 단위 테스트와 프로덕션 빌드 구성
 
 아직 미구현:
 
-- `DiceExpression`과 실제 피해 계산의 연결
-- 가변 피해 이벤트별 모델 상태 전이
+- 체계적인 골든·속성 기반·단조성 테스트 세트
 - 재굴림, 치명타, 추가 명중
 - 피해 감소와 Feel No Pain
 - 복수 공격 그룹
