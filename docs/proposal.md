@@ -274,7 +274,7 @@ Pull Request / main push
 → deploy-pages
 ```
 
-CI와 시험 배포 워크플로는 Node.js 24를 사용한다. 로컬 개발은 저장소 `engines` 조건인 Node.js 20.19.x 또는 22.12 이상을 지원한다.
+CI와 시험 배포 워크플로는 Node.js 24를 사용한다. 로컬 개발은 저장소 `engines` 조건에 따라 Node.js 20.19 이상인 20.x 또는 22.12 이상을 지원한다.
 
 시험 완료 후 다음 기준으로 GitHub Pages 유지 또는 다른 정적 호스팅 환경 전환을 결정한다.
 
