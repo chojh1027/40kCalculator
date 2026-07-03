@@ -130,11 +130,11 @@ export function buildResultStageGroups(
     valueFormat: { kind: "count", singular: "wound" },
   });
 
-  return Object.freeze([
-    Object.freeze({
+  const groups: ResultStageGroup[] = [
+    {
       key: "attacks",
       title: "Attacks",
-      stages: Object.freeze([
+      stages: [
         {
           key: "attacks",
           title: "Average Attacks",
@@ -142,22 +142,22 @@ export function buildResultStageGroups(
           rows: result.stageDistributions.attacks,
           valueFormat: { kind: "count", singular: "attack" },
         },
-      ]),
-    }),
-    Object.freeze({
+      ],
+    },
+    {
       key: "hits",
       title: "Hit Resolution",
-      stages: Object.freeze(hitStages),
-    }),
-    Object.freeze({
+      stages: hitStages,
+    },
+    {
       key: "wounds",
       title: "Wound Resolution",
-      stages: Object.freeze(woundStages),
-    }),
-    Object.freeze({
+      stages: woundStages,
+    },
+    {
       key: "damage",
       title: "Saves and Damage",
-      stages: Object.freeze([
+      stages: [
         {
           key: "failed-saves",
           title: "Average Failed Saves",
@@ -187,7 +187,16 @@ export function buildResultStageGroups(
           rows: result.stageDistributions.destroyedModels,
           valueFormat: { kind: "models" },
         },
-      ]),
-    }),
-  ]);
+      ],
+    },
+  ];
+
+  return Object.freeze(
+    groups.map((group) =>
+      Object.freeze({
+        ...group,
+        stages: Object.freeze([...group.stages]),
+      }),
+    ),
+  );
 }
