@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { allocateFixedDamage, calculateBattle, woundTarget } from "./index";
+import {
+  allocateFixedDamage,
+  attackCountToPmf,
+  calculateBattle,
+  woundTarget,
+} from "./index";
+
+const BASE_INPUT = {
+  skill: 3,
+  strength: 4,
+  armorPenetration: 0,
+  damage: 1,
+  targetToughness: 4,
+  targetSave: 3,
+  targetWounds: 2,
+  targetModelCount: 5,
+} as const;
 
 describe("woundTarget", () => {
   it.each([
@@ -10,6 +26,30 @@ describe("woundTarget", () => {
     [2, 4, 6],
   ])("maps S%s against T%s to %s+", (strength, toughness, expected) => {
     expect(woundTarget(strength, toughness)).toBe(expected);
+  });
+});
+
+describe("attackCountToPmf", () => {
+  it("keeps numeric attack counts as a certain distribution", () => {
+    expect(attackCountToPmf(4).entries).toEqual([
+      { value: 4, probability: 1 },
+    ]);
+  });
+
+  it("converts a D6 attack expression to an exact uniform distribution", () => {
+    const distribution = attackCountToPmf({ kind: "dice", count: 1, sides: 6 });
+
+    expect(distribution.entries.map((entry) => entry.value)).toEqual([1, 2, 3, 4, 5, 6]);
+    for (const entry of distribution.entries) {
+      expect(entry.probability).toBeCloseTo(1 / 6, 12);
+    }
+    expect(distribution.expectation((value) => value)).toBeCloseTo(3.5, 12);
+  });
+
+  it("rejects expressions that can exceed the battle attack limit", () => {
+    expect(() =>
+      attackCountToPmf({ kind: "dice", count: 3, sides: 100 }),
+    ).toThrow("attacks must produce an integer between 0 and 200.");
   });
 });
 
@@ -30,15 +70,8 @@ describe("allocateFixedDamage", () => {
 describe("calculateBattle", () => {
   it("returns normalized deterministic outcome and stage distributions", () => {
     const input = {
+      ...BASE_INPUT,
       attacks: 6,
-      skill: 3,
-      strength: 4,
-      armorPenetration: 0,
-      damage: 1,
-      targetToughness: 4,
-      targetSave: 3,
-      targetWounds: 2,
-      targetModelCount: 5,
     } as const;
 
     const first = calculateBattle(input);
@@ -57,6 +90,46 @@ describe("calculateBattle", () => {
       const probabilitySum = distribution.reduce((sum, row) => sum + row.probability, 0);
       expect(probabilitySum).toBeCloseTo(1, 12);
     }
+  });
+
+  it("keeps numeric and fixed-expression attack results identical", () => {
+    const numericResult = calculateBattle({
+      ...BASE_INPUT,
+      attacks: 6,
+    });
+    const fixedExpressionResult = calculateBattle({
+      ...BASE_INPUT,
+      attacks: { kind: "fixed", value: 6 },
+    });
+
+    expect(fixedExpressionResult).toEqual(numericResult);
+  });
+
+  it("mixes hit, wound, save, and outcome distributions across D6 attacks", () => {
+    const result = calculateBattle({
+      ...BASE_INPUT,
+      attacks: { kind: "dice", count: 1, sides: 6 },
+    });
+
+    expect(result.stageDistributions.attacks.map((row) => row.value)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(result.stageBreakdown.expectedAttacks).toBeCloseTo(3.5, 12);
+    expect(result.stageBreakdown.expectedHits).toBeCloseTo(3.5 * (4 / 6), 12);
+
+    for (const distribution of Object.values(result.stageDistributions)) {
+      expect(distribution.reduce((sum, row) => sum + row.probability, 0)).toBeCloseTo(1, 12);
+    }
+    expect(result.outcomeDistribution.reduce((sum, row) => sum + row.probability, 0)).toBeCloseTo(1, 12);
+  });
+
+  it("supports multiple attack dice and modifiers", () => {
+    const result = calculateBattle({
+      ...BASE_INPUT,
+      attacks: { kind: "dice", count: 2, sides: 6, modifier: 1 },
+    });
+
+    expect(result.stageBreakdown.expectedAttacks).toBeCloseTo(8, 12);
+    expect(result.stageDistributions.attacks[0]?.value).toBe(3);
+    expect(result.stageDistributions.attacks.at(-1)?.value).toBe(13);
   });
 
   it("keeps distribution averages aligned with summary values", () => {
@@ -100,6 +173,7 @@ describe("calculateBattle", () => {
 
     expect(result.summary.expectedEffectiveDamage).toBe(0);
     expect(result.summary.unitDestroyedProbability).toBe(0);
+    expect(result.stageDistributions.attacks).toEqual([{ value: 0, probability: 1 }]);
     expect(result.stageDistributions.hits).toEqual([{ value: 0, probability: 1 }]);
     expect(result.stageDistributions.effectiveDamage).toEqual([{ value: 0, probability: 1 }]);
   });
