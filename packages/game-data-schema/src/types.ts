@@ -2,6 +2,7 @@ import type {
   AttackCount,
   DamageAmount,
 } from "@40k-calculator/calculator";
+import type { AbilityEffect } from "./ability-effects";
 
 export type WeaponType = "ranged" | "melee";
 export type DataSourceKind = "sample" | "official" | "community";
@@ -48,6 +49,7 @@ export interface Ability {
   readonly id: string;
   readonly name: string;
   readonly description?: string;
+  readonly effects: readonly AbilityEffect[];
 }
 
 export interface WeaponProfile {
