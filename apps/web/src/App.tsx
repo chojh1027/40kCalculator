@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import {
   calculateBattle,
+  repeatAttackCount,
+  type AttackCount,
   type BattleInput,
   type ValueProbability,
 } from "@40k-calculator/calculator";
@@ -25,6 +27,16 @@ const decimal = (value: number): string => value.toFixed(2);
 const modelLabel = (count: number): string => `${count} model${count === 1 ? "" : "s"}`;
 const countLabel = (count: number, singular: string): string =>
   `${count} ${singular}${count === 1 ? "" : "s"}`;
+
+function formatAttackCount(attacks: AttackCount): string {
+  if (typeof attacks === "number") return String(attacks);
+  if (attacks.kind === "fixed") return String(attacks.value);
+
+  const dice = `${attacks.count === 1 ? "" : attacks.count}D${attacks.sides}`;
+  const modifier = attacks.modifier ?? 0;
+  if (modifier === 0) return dice;
+  return `${dice}${modifier > 0 ? "+" : ""}${modifier}`;
+}
 
 function getUnitWeapons(unit: Unit): Weapon[] {
   return unit.weaponIds
@@ -144,9 +156,13 @@ export function App() {
     weapon.skillOverride ??
     (weapon.type === "ranged" ? attackingUnit.ballisticSkill : attackingUnit.weaponSkill);
   const skillLabel = weapon.type === "ranged" ? "BS" : "WS";
+  const totalAttacks = useMemo(
+    () => repeatAttackCount(weapon.attacks, attackingModelCount),
+    [weapon.attacks, attackingModelCount],
+  );
 
   const input: BattleInput = {
-    attacks: weapon.attacks * attackingModelCount,
+    attacks: totalAttacks,
     skill,
     strength: weapon.strength,
     armorPenetration: weapon.armorPenetration,
@@ -301,7 +317,7 @@ export function App() {
 
           <dl className="weapon-profile" aria-label={`${weapon.name} profile`}>
             <div><dt>Models</dt><dd>{attackingModelCount}</dd></div>
-            <div><dt>A</dt><dd>{weapon.attacks}</dd></div>
+            <div><dt>A</dt><dd>{formatAttackCount(weapon.attacks)}</dd></div>
             <div><dt>{skillLabel}</dt><dd>{skill}+</dd></div>
             <div><dt>S</dt><dd>{weapon.strength}</dd></div>
             <div><dt>AP</dt><dd>{weapon.armorPenetration}</dd></div>
@@ -386,6 +402,12 @@ export function App() {
           </div>
 
           <div className="result-stages">
+            <ResultStage
+              title="Average Attacks"
+              average={result.stageBreakdown.expectedAttacks}
+              rows={result.stageDistributions.attacks}
+              formatValue={(value) => countLabel(value, "attack")}
+            />
             <ResultStage
               title="Average Hits"
               average={result.stageBreakdown.expectedHits}
