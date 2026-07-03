@@ -9,6 +9,13 @@ import rawCatalog from "./catalog.json";
 export type Weapon = WeaponProfile;
 export type Unit = CatalogUnit & {
   readonly modelProfile: ModelProfile;
+  readonly weaponIds: readonly string[];
+  readonly ballisticSkill: number;
+  readonly weaponSkill: number;
+  readonly toughness: number;
+  readonly save: number;
+  readonly invulnerableSave?: number;
+  readonly wounds: number;
 };
 
 export const CATALOG = parseGameDataCatalog(rawCatalog);
@@ -38,6 +45,13 @@ export const UNITS: readonly Unit[] = Object.freeze(
     return Object.freeze({
       ...unit,
       modelProfile,
+      weaponIds: unit.weaponProfileIds,
+      ballisticSkill: modelProfile.ballisticSkill,
+      weaponSkill: modelProfile.weaponSkill,
+      toughness: modelProfile.toughness,
+      save: modelProfile.save,
+      invulnerableSave: modelProfile.invulnerableSave,
+      wounds: modelProfile.wounds,
     });
   }),
 );
