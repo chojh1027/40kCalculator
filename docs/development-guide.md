@@ -1,6 +1,6 @@
 # Dice Servitor 개발 지침 및 진행 현황
 
-- 문서 상태: v0.4
+- 문서 상태: v0.5
 - 기준일: 2026-07-03
 - 대상 저장소: `chojh1027/40kCalculator`
 - 관련 문서: [프로젝트 프로포절](./proposal.md), [기술 설계서](./technical-design.md), [개발 로드맵](./roadmap.md)
@@ -182,9 +182,14 @@ npm run check
 └─ .github/workflows/
 ```
 
-공개 하위 경로:
+공개 경로:
 
 ```ts
+import {
+  attackCountToPmf,
+  calculateBattle,
+  type AttackCount,
+} from "@40k-calculator/calculator";
 import { Pmf } from "@40k-calculator/calculator/pmf";
 import {
   diceExpressionBounds,
@@ -218,16 +223,16 @@ import {
 
 | 항목 | 상태 | 현재 내용 |
 |---|---:|---|
-| 입력 검증 | ✅ | 기본 능력치와 모델 수 범위 검사 |
-| 고정 공격·피해 | ✅ | 단일 공격 그룹 |
+| 입력 검증 | ✅ | 기본 능력치, 모델 수와 공격 표현 범위 검사 |
+| 고정 공격·피해 | ✅ | 기존 숫자 입력과 단일 공격 그룹 유지 |
 | 명중·상처·내성 | ✅ | 기본 판정과 무적 내성 |
 | 다중 운드·non-spill | ✅ | 모델별 순차 피해 할당 |
 | 결과 요약과 분포 | ✅ | 기대값, 최빈 상태, 전멸 확률 |
 | 공통 PMF 자료구조 | ✅ | 정규화, 병합, 변환과 합성 |
 | `DiceExpression` | ✅ | 고정값, D3, D6, 복수 주사위와 보정치 |
 | 주사위 범위 계산 | ✅ | 최소·최대 결과 검증 |
-| 기존 계산의 PMF 이전 | ⬜ | 현재 전투 계산은 기존 이항분포 코드 사용 |
-| 가변 공격 횟수 | ⬜ | `BattleInput.attacks`는 아직 `number` |
+| 기존 계산의 PMF 이전 | ✅ | 공격부터 최종 상태까지 `Pmf`로 합성 |
+| 가변 공격 횟수 | ✅ | `number | DiceExpression`, 공격 횟수별 조건부 합성 |
 | 가변 피해 | ⬜ | `BattleInput.damage`는 아직 `number` |
 | 복수 공격 그룹 | ⬜ | 미지원 |
 
@@ -242,6 +247,7 @@ import {
 | 고정값 PMF | ✅ | 확률 1의 단일 결과 |
 | D3·D6 PMF | ✅ | 균등분포 |
 | 복수 주사위 PMF | ✅ | `2D6+1` 등 조합 확률 합성 |
+| 공격 횟수 PMF 통합 | ✅ | 명중·상처·내성·최종 상태의 혼합 분포 |
 | 잘못된 표현 검증 | ✅ | 비정수, 음수 결과, 범위 초과 차단 |
 
 ### 웹 UI
@@ -252,6 +258,7 @@ import {
 | Alliance/Faction/Unit 선택 | ✅ | 공격·방어 선택 흐름 |
 | 무장 선택 | ✅ | 유닛의 `weaponIds` 기반 |
 | 프로필과 핵심 결과 | ✅ | 단계별 분포 포함 |
+| 가변 공격 입력 | ⬜ | 현재 샘플 무장과 UI는 고정 공격 값 사용 |
 | 상세 최종 상태 표 | ⬜ | 잔여 운드별 전체 분포 필요 |
 | 검색·자동 완성 | ⬜ | 외부 데이터 이후 |
 | 공유 링크·프리셋 | ⬜ | 미구현 |
@@ -274,8 +281,8 @@ import {
 
 ## 8. 현재 알려진 제약과 기술 부채
 
-- 기존 전투 계산이 새 PMF 및 `DiceExpression` 모듈과 분리돼 있다.
-- 실제 공격 횟수와 피해는 고정 정수다.
+- 실제 피해량은 고정 정수다.
+- 웹 샘플 데이터와 UI는 가변 공격 표현을 아직 입력하지 않는다.
 - 단일 공격 그룹만 처리한다.
 - Modifier 적용 시점과 중첩 체계가 없다.
 - 유닛과 모델 프로필이 하나의 `Unit` 타입에 결합돼 있다.
@@ -289,12 +296,12 @@ import {
 
 ## 9. 다음 개발 우선순위
 
-1. `BattleInput.attacks`에 `DiceExpression` 도입
-2. 가변 공격 횟수별 명중 분포 합성
-3. 기존 고정 공격 결과 회귀 검증
-4. `BattleInput.damage`에 `DiceExpression` 도입
-5. 공격별 가변 피해와 모델 할당 결합
-6. 골든·불변식 테스트 강화
+1. `BattleInput.damage`에 `DiceExpression` 도입
+2. 실패한 내성마다 피해량 PMF 적용
+3. 가변 피해와 모델별 non-spill 피해 할당 상태 합성
+4. 기존 고정 피해 결과 회귀 검증
+5. D3·D6 피해 골든 테스트 추가
+6. 확률 범위·총합·결정성·단조성 불변식 테스트 강화
 7. 외부 데이터 스키마와 JSON 분리
 
 세부 완료 조건은 `docs/roadmap.md`를 따른다.
