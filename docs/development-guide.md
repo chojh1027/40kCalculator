@@ -1,6 +1,6 @@
 # Dice Servitor 개발 지침 및 진행 현황
 
-- 문서 상태: v0.15
+- 문서 상태: v0.16
 - 기준일: 2026-07-04
 - 대상 저장소: `chojh1027/40kCalculator`
 - 관련 문서: [프로젝트 프로포절](./proposal.md), [기술 설계서](./technical-design.md), [개발 로드맵](./roadmap.md)
@@ -37,12 +37,20 @@
 - 계산 엔진의 결과를 UI 편의를 위해 다시 계산하지 않는다.
 - 현재 샘플 카탈로그와 향후 공식·커뮤니티 데이터 배포를 명확히 구분한다.
 
+### 배포 독립성
+
+- 정적 빌드 산출물을 기본 배포 단위로 사용한다.
+- 현재 GitHub Pages는 시험 배포 환경으로 취급한다.
+- 시험 환경과 확정 운영 환경을 문서에서 구분한다.
+- 호스팅 변경이 계산 엔진, 데이터 스키마와 UI 구조에 영향을 주지 않도록 한다.
+- 호스팅 사업자 전용 API를 핵심 기능의 필수 경로로 사용하지 않는다.
+
 ### 문서 정확성
 
 - 계획 기능을 구현 완료로 표시하지 않는다.
-- 실제 배포 환경과 CI 버전을 문서에 정확히 기록한다.
+- 실제 CI 버전과 현재 시험 배포 환경을 정확히 기록한다.
 - 구현 변경 시 README, roadmap, development-guide, technical-design 중 영향받는 문서를 함께 갱신한다.
-- 제품 목적이나 완료 기준이 달라질 때만 proposal을 수정한다.
+- 제품 목적이나 완료 기준이 달라질 때 proposal을 수정한다.
 
 ---
 
@@ -183,6 +191,7 @@ stageDistributions.woundRolls
 stageDistributions.automaticWounds
 stageDistributions.wounds
 stageDistributions.failedSaves
+stageDistributions.damagePerFailedSave
 stageDistributions.effectiveDamage
 stageDistributions.destroyedModels
 ```
@@ -196,6 +205,7 @@ stageBreakdown.expectedWoundRolls
 stageBreakdown.expectedAutomaticWounds
 stageBreakdown.expectedWounds
 stageBreakdown.expectedFailedSaves
+stageBreakdown.expectedDamagePerFailedSave
 stageBreakdown.expectedFinalDamage
 ```
 
@@ -214,6 +224,7 @@ stageBreakdown.expectedFinalDamage
 - 규칙 적용 시 기대값 단조성
 - 명중·상처 재굴림의 단일 재굴림 보장
 - Sustained/Lethal 동시 적용 경로
+- non-spill 피해 할당
 
 ### 데이터
 
@@ -264,21 +275,44 @@ npm run check
 Node.js ^20.19.0 또는 >=22.12.0
 ```
 
-### GitHub Actions
+즉 Node.js 20 계열에서는 20.19 이상을 사용하고, 22 계열 이상에서는 22.12 이상을 사용한다. Node.js 21 계열은 지원 범위에 포함하지 않는다.
 
-CI와 Pages 배포는 Node.js 24를 사용한다.
+### GitHub Actions CI
+
+CI는 Node.js 24를 사용한다.
 
 ```text
-npm ci
+PR 또는 main push
+→ npm ci
 → npm run check
-→ Vite build artifact
+```
+
+### 현재 GitHub Pages 시험 배포
+
+```text
+main push 또는 workflow_dispatch
+→ Node.js 24
+→ npm ci
+→ npm run check
+→ apps/web/dist 업로드
 → GitHub Pages deploy
 ```
 
-- PR과 `main` push에서 CI를 실행한다.
-- `main` push에서 GitHub Pages 빌드·배포를 실행한다.
 - 배포 대상은 `apps/web/dist`다.
+- Vite는 상대 경로 배포를 위해 `base: "./"`를 사용한다.
+- GitHub Pages는 현재 시험 환경이다.
+- 시험 후 유지 또는 다른 정적 호스팅으로 전환한다.
+- 플랫폼 전환 시에도 동일한 빌드와 검사 명령을 유지한다.
 - lockfile 변경 없이 의존성 선언만 변경하지 않는다.
+
+시험 항목:
+
+- 첫 접근과 직접 URL 접근
+- 새로고침과 상대 경로
+- 모바일 화면과 입력 동작
+- 캐시 갱신
+- 배포 실패 시 복구
+- 성능과 운영 편의성
 
 ---
 
@@ -324,7 +358,8 @@ npm ci
 | 항목 | 상태 | 현재 내용 |
 |---|---:|---|
 | CI | ✅ | PR·main, Node.js 24 |
-| 배포 | ✅ | GitHub Pages |
+| 정적 배포 자동화 | ✅ | GitHub Pages workflow |
+| 호스팅 플랫폼 확정 | 🟡 | Pages 시험 후 결정 |
 | 공식 전체 데이터 | ⬜ | 권리·수집 방식 검토 필요 |
 | 로컬 데이터 캐시 | ⬜ | IndexedDB 예정 |
 
@@ -340,6 +375,11 @@ npm ci
 6. 갱신 실패 시 마지막 정상 버전 복구
 7. 과거 버전 선택 구조
 
+병행 검증:
+
+- GitHub Pages 시험 배포 테스트
+- 시험 결과에 따른 호스팅 유지·전환 결정
+
 ---
 
 ## 10. 기능 추가 체크리스트
@@ -353,6 +393,7 @@ npm ci
 - [ ] 기존 미적용 입력의 호환성을 검증했다.
 - [ ] 모든 공개 분포 정규화를 검증했다.
 - [ ] 관련 문서를 실제 구현 상태로 갱신했다.
+- [ ] 시험 환경과 확정 운영 환경을 구분했다.
 - [ ] `npm ci` 이후 `npm run check`를 통과했다.
 
 ---
@@ -363,6 +404,6 @@ npm ci
 - 개발 원칙과 테스트 기준: `development-guide.md`
 - 구조와 기술 결정: `technical-design.md`
 - 제품 목적과 범위: `proposal.md`
-- 실행·사용·배포 방법: `README.md`
+- 실행·사용·현재 시험 배포 방법: `README.md`
 
 계획만 존재하는 기능을 완료로 표시하지 않는다.
