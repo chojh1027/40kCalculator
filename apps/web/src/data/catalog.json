@@ -3,7 +3,7 @@
     "schemaVersion": 1,
     "gameSystem": "warhammer-40000",
     "edition": "10th Edition",
-    "releaseId": "dice-servitor-sample-2026-07-r2",
+    "releaseId": "dice-servitor-sample-2026-07-r3",
     "effectiveDate": "2026-07-03",
     "lastModified": "2026-07-03",
     "source": {
@@ -88,7 +88,24 @@
       "wounds": 1
     }
   ],
-  "abilities": [],
+  "abilities": [
+    {
+      "id": "test-sustained-hits-one",
+      "name": "Sustained Hits 1",
+      "description": "Temporary calculation test ability.",
+      "effects": [
+        { "kind": "sustained-hits", "extraHits": 1 }
+      ]
+    },
+    {
+      "id": "test-lethal-hits",
+      "name": "Lethal Hits",
+      "description": "Temporary calculation test ability.",
+      "effects": [
+        { "kind": "lethal-hits" }
+      ]
+    }
+  ],
   "weaponProfiles": [
     {
       "id": "bolt-rifle",
@@ -118,7 +135,7 @@
       "strength": 4,
       "armorPenetration": -1,
       "damage": 1,
-      "abilityIds": []
+      "abilityIds": ["test-sustained-hits-one"]
     },
     {
       "id": "temporary-lethal-hits-rifle",
@@ -128,7 +145,7 @@
       "strength": 4,
       "armorPenetration": -1,
       "damage": 1,
-      "abilityIds": []
+      "abilityIds": ["test-lethal-hits"]
     },
     {
       "id": "plasma-incinerator",
