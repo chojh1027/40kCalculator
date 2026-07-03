@@ -1,6 +1,6 @@
 # Dice Servitor 기술 설계서
 
-- 문서 상태: v0.10
+- 문서 상태: v0.11
 - 기준일: 2026-07-03
 - 관련 문서: [`proposal.md`](./proposal.md), [`roadmap.md`](./roadmap.md), [`development-guide.md`](./development-guide.md)
 
@@ -8,9 +8,10 @@
 
 ```text
 React Web UI
-  ├─ validated catalog adapter
+  ├─ catalog adapter
   │    ├─ catalog.json
-  │    └─ @40k-calculator/game-data-schema
+  │    ├─ @40k-calculator/game-data-schema
+  │    └─ ability-rules.ts
   └─ @40k-calculator/calculator
        ├─ Pmf<T>
        ├─ DiceExpression
@@ -19,9 +20,11 @@ React Web UI
        └─ battle pipeline
 ```
 
-- `apps/web`: UI, 외부 데이터 로딩과 결과 표시
-- `packages/game-data-schema`: 데이터 계약과 런타임 검증
 - `packages/calculator`: 순수 확률 계산
+- `packages/game-data-schema`: 데이터 타입과 런타임 검증
+- `apps/web/src/data/catalog.ts`: 검증된 카탈로그 접근
+- `apps/web/src/data/ability-rules.ts`: Unit·Weapon Ability 효과 합성
+- `apps/web/src/App.tsx`: 사용자 입력과 계산 결과 표시
 
 ## 2. 핵심 원칙
 
@@ -29,336 +32,290 @@ React Web UI
 
 모든 가변 주사위와 상태 전이는 `Pmf<T>`로 계산한다. 기대값은 최종 분포에서 파생한다.
 
-### 상태 보존
+### 선언형 규칙 데이터
 
-Critical Hit, Sustained 추가 명중과 Lethal 자동 상처를 서로 다른 상태로 유지한다. 후속 규칙이 필요한 상태를 조기에 합치지 않는다.
+게임 데이터는 실행 코드를 포함하지 않는다. Ability는 허용된 `AbilityEffect` 객체만 가진다.
 
-### 독립 이벤트
+### 계층 분리
 
-가변 Sustained Hits는 각 Critical Hit마다 독립적인 주사위 이벤트다.
+- 계산 엔진은 Ability ID를 알지 못한다.
+- 스키마는 효과 구조와 범위를 검증한다.
+- 웹 데이터 계층은 Unit·Weapon Ability를 계산 입력으로 변환한다.
+- React 컴포넌트는 합성된 규칙을 소비한다.
 
 ### 하위 호환성
 
-다음 필드를 생략한 입력은 명시적 비활성 입력과 동일하다.
-
-```ts
-{
-  hitReroll: { kind: "none" },
-  woundReroll: { kind: "none" },
-  criticalHitOn: 6,
-  sustainedHits: 0,
-  lethalHits: false,
-}
-```
-
-기존 골든 결과를 유지한다.
+`effects`가 없는 기존 Ability JSON은 빈 배열로 해석한다. 규칙 필드를 생략한 `BattleInput`은 기존 기본값을 유지한다.
 
 ## 3. 저장소 구조
 
 ```text
-packages/calculator/src/
-├─ index.ts
-├─ pmf.ts
-├─ dice-expression.ts
-├─ roll-rules.ts
-├─ critical-hit-effects.ts
-├─ roll-rules.test.ts
-├─ battle-roll-rules.test.ts
-├─ critical-hit-effects.test.ts
-├─ critical-hit-abilities.test.ts
-├─ input-validation.test.ts
-├─ golden.test.ts
-└─ invariants.test.ts
+packages/game-data-schema/src/
+├─ ability-effects.ts
+├─ types.ts
+├─ validation.ts
+├─ validation.test.ts
+└─ index.ts
+
+apps/web/src/data/
+├─ catalog.json
+├─ catalog.ts
+├─ catalog.test.ts
+├─ ability-rules.ts
+└─ ability-rules.test.ts
 ```
 
-## 4. 전투 입력
+## 4. Ability 데이터 모델
 
 ```ts
-type RerollPolicy =
-  | { readonly kind: "none" }
-  | { readonly kind: "ones" }
-  | { readonly kind: "failures" };
+type RerollPolicyKind = "none" | "ones" | "failures";
 
-type SustainedHitCount = number | DiceExpression;
+type AbilityEffect =
+  | {
+      readonly kind: "hit-reroll";
+      readonly policy: RerollPolicyKind;
+    }
+  | {
+      readonly kind: "wound-reroll";
+      readonly policy: RerollPolicyKind;
+    }
+  | {
+      readonly kind: "critical-hit-threshold";
+      readonly value: number;
+    }
+  | {
+      readonly kind: "sustained-hits";
+      readonly extraHits: SustainedHitCount;
+    }
+  | {
+      readonly kind: "lethal-hits";
+    };
+```
 
-interface BattleInput {
-  attacks: AttackCount;
-  skill: number;
-  hitReroll?: RerollPolicy;
-  criticalHitOn?: number;
-  sustainedHits?: SustainedHitCount;
-  lethalHits?: boolean;
-  strength: number;
-  woundReroll?: RerollPolicy;
-  armorPenetration: number;
-  damage: DamageAmount;
-  targetToughness: number;
-  targetSave: number;
-  targetInvulnerableSave?: number;
-  targetWounds: number;
-  targetModelCount: number;
+```ts
+interface Ability {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string;
+  readonly effects: readonly AbilityEffect[];
 }
 ```
 
-범위:
+## 5. 런타임 검증
 
-| 항목 | 범위 |
-|---|---:|
-| 공격 횟수 | 0~200 |
-| Critical Hit 임계값 | 2~6 |
-| Critical Hit당 Sustained Hits | 0~6 |
-| 규칙 적용 후 총 명중 | 0~600 |
-| 개별 피해 | 1~30 |
+`parseGameDataCatalog`는 Ability 효과를 다음 기준으로 검증한다.
 
-## 5. 명중 굴림 모델
+| 효과 | 검증 |
+|---|---|
+| hit-reroll | 허용 정책만 사용 |
+| wound-reroll | 허용 정책만 사용 |
+| critical-hit-threshold | 정수 2~6 |
+| sustained-hits | 결과 범위 0~6 |
+| lethal-hits | 추가 필드 없음 |
 
-단일 명중 굴림 결과:
+모든 효과 객체는 미지원 필드를 거부한다. 파싱된 효과 객체와 배열은 동결한다.
+
+## 6. Ability 참조와 조회
 
 ```text
-failure
-normal success
-critical success
+Unit.abilityIds
+WeaponProfile.abilityIds
+        │
+        ▼
+ABILITIES_BY_ID: ReadonlyMap<string, Ability>
 ```
 
-```ts
-interface HitCountState {
-  readonly normalHits: number;
-  readonly criticalHits: number;
-}
-```
+카탈로그 전체 검증 단계에서 누락 참조를 거부한다. `resolveAbilityRules`도 방어적으로 누락 Ability를 오류 처리한다.
 
-`hitCountPmf`는 단일 공격 결과 PMF를 공격 횟수만큼 반복 합성한다.
-
-## 6. Critical Hit 효과 해석
+## 7. 효과 합성
 
 공개 함수:
 
 ```ts
-sustainedHitsToPmf(
-  sustainedHits: SustainedHitCount | undefined,
-): Pmf<number>
-
-resolveCriticalHitEffects(
-  hitState: HitCountState,
-  sustainedHits: SustainedHitCount | undefined,
-  lethalHits: boolean,
-): Pmf<ResolvedHitState>
+resolveAbilityRules(
+  unit: Pick<Unit, "abilityIds">,
+  weapon: Pick<WeaponProfile, "abilityIds">,
+  abilitiesById: ReadonlyMap<string, Ability>,
+): ResolvedAbilityRules
 ```
 
-결과 상태:
+결과:
 
 ```ts
-interface ResolvedHitState extends HitCountState {
-  readonly sustainedHits: number;
-  readonly totalHits: number;
-  readonly woundRolls: number;
-  readonly automaticWounds: number;
+interface ResolvedAbilityRules {
+  readonly abilityIds: readonly string[];
+  readonly labels: readonly string[];
+  readonly hitReroll?: RerollPolicy;
+  readonly woundReroll?: RerollPolicy;
+  readonly criticalHitOn?: number;
+  readonly sustainedHits?: SustainedHitCount;
+  readonly lethalHits?: boolean;
 }
 ```
 
-상태 키는 다음 모든 값을 포함한다.
+### 수집 순서
 
 ```text
-normalHits
-criticalHits
-sustainedHits
-totalHits
-woundRolls
-automaticWounds
+Unit ability IDs → Weapon ability IDs
 ```
 
-## 7. Sustained Hits
+중복 ID는 최초 위치를 유지하며 제거한다.
 
-Critical Hit마다 추가 명중 수 PMF를 한 번씩 독립 합성한다.
+### 재굴림
 
 ```text
-total sustained hits
-= repeat(extra hits per critical, criticalHits, sum)
+none < ones < failures
 ```
 
-고정 Sustained Hits는 결정적 분포이고, D3 같은 가변 값은 합 분포를 만든다.
+가장 강한 정책을 선택한다.
 
-예: Critical Hit 2개와 Sustained Hits D3
+### Critical Hit 임계값
 
-```text
-possible extra hits: 2, 3, 4, 5, 6
-expected extra hits: 4
-```
-
-추가 명중은 일반 명중이며 새로운 명중 굴림이 아니다.
-
-## 8. Lethal Hits
-
-Lethal Hits 미적용:
-
-```text
-automaticWounds = 0
-woundRolls = normalHits + criticalHits + sustainedHits
-```
-
-Lethal Hits 적용:
-
-```text
-automaticWounds = criticalHits
-woundRolls = normalHits + sustainedHits
-```
-
-원래 Critical Hit만 자동 상처가 된다. Sustained Hits로 생성된 명중은 상처 굴림을 한다.
-
-## 9. 전투 파이프라인
-
-```text
-AttackCount PMF
-→ reroll-aware hit outcome
-→ joint normal/critical hit PMF
-→ resolve Sustained/Lethal effects
-→ wound-roll count + automatic wounds
-→ reroll-aware wound-roll PMF
-→ add automatic wounds
-→ failed save PMF
-→ independent damage events
-→ defender damage state PMF
-→ summaries and public distributions
-```
-
-상처 수 계산:
-
-```text
-total wounds
-= successful wound rolls + automatic wounds
-```
-
-자동 상처는 상처 굴림과 상처 재굴림을 거치지 않지만 내성 굴림은 거친다.
-
-## 10. 공개 결과
-
-```ts
-interface HitOutcomeProbability extends ResolvedHitState {
-  probability: number;
-}
-```
-
-분포:
-
-```text
-stageDistributions.normalHits
-stageDistributions.criticalHits
-stageDistributions.sustainedHits
-stageDistributions.hits
-stageDistributions.woundRolls
-stageDistributions.automaticWounds
-stageDistributions.wounds
-```
-
-기대값:
-
-```text
-expectedNormalHits
-expectedCriticalHits
-expectedSustainedHits
-expectedHits
-expectedWoundRolls
-expectedAutomaticWounds
-expectedWounds
-```
-
-`expectedHits`는 Sustained Hits까지 포함한 총 명중 기대값이다.
-
-## 11. 검증과 제한
-
-### Sustained Hits
-
-- 숫자 또는 `DiceExpression`
-- 가능한 최소 결과가 0 이상
-- 가능한 최대 결과가 6 이하
+가장 낮은 값을 선택한다.
 
 ### Lethal Hits
 
-런타임 값이 boolean이 아니면 거부한다.
+논리 OR로 합성한다.
 
-### 총 명중 상한
+### Sustained Hits
 
-한 resolved state의 `totalHits`가 600을 초과하면 계산을 거부한다. 이는 비정상 입력으로 인한 상태 폭발을 제한한다.
+동일 값을 여러 Ability가 제공하는 것은 허용한다. 서로 다른 값은 자동 우선순위를 정하지 않고 오류로 처리한다.
 
-### 공격 표현
-
-음수가 가능한 공격 주사위 표현은 거부한다. 하위 `DiceExpression` 검증이 먼저 실패할 수 있으며, 두 계층 모두 음수 공격을 허용하지 않는다.
-
-## 12. 테스트 구조
-
-### `critical-hit-effects.test.ts`
-
-- 효과 없는 상태
-- 고정 Sustained Hits
-- 가변 Sustained Hits 독립 합성
-- Lethal 자동 상처
-- 동시 적용
-- 범위·타입·총 명중 상한
-
-### `critical-hit-abilities.test.ts`
-
-BS 3+, Critical 6+, S4 대 T4를 기준으로 다음 기대값을 검증한다.
-
-| 규칙 | 평균 총 명중 | 평균 상처 굴림 | 평균 자동 상처 | 평균 총 상처 |
-|---|---:|---:|---:|---:|
-| 없음 | 4 | 4 | 0 | 2 |
-| Sustained 1 | 5 | 5 | 0 | 2.5 |
-| Lethal | 4 | 3 | 1 | 2.5 |
-| Sustained 1 + Lethal | 5 | 4 | 1 | 3 |
-
-추가 검증:
-
-- 기본값 하위 호환성
-- 가변 Sustained 분포
-- 상처 재굴림이 자동 상처에 미적용
-- resolved state 유일성
-- 모든 공개 분포 정규화
-- 능력 추가 시 평균 피해 비감소
-
-## 13. 데이터와 Ability 연결 방향
-
-현재 데이터의 `Ability`는 이름과 설명만 가진다. 다음 데이터 계약은 선언형 효과를 추가한다.
-
-```ts
-type AbilityEffect =
-  | { kind: "hit-reroll"; policy: RerollPolicy }
-  | { kind: "wound-reroll"; policy: RerollPolicy }
-  | { kind: "critical-hit-threshold"; value: number }
-  | { kind: "sustained-hits"; extraHits: SustainedHitCount }
-  | { kind: "lethal-hits" };
-```
-
-권장 해석 구조:
+동등성 키:
 
 ```text
-Unit ability IDs
-+ Weapon ability IDs
-→ Ability lookup
-→ effect validation
-→ effect composition
-→ BattleInput rule fields
+number N        → fixed:N
+fixed N         → fixed:N
+dice expression → dice:count:sides:modifier
 ```
 
-효과 합성 규칙을 별도 순수 함수로 둔다. React 컴포넌트와 계산 엔진 내부에서 Ability ID를 직접 해석하지 않는다.
+## 8. 웹 계산 연결
 
-## 14. 현재 구현 범위
+```text
+selected Unit + selected Weapon
+→ resolveAbilityRules
+→ BattleInput fields
+→ calculateBattle
+```
+
+연결 필드:
+
+```text
+hitReroll
+woundReroll
+criticalHitOn
+sustainedHits
+lethalHits
+```
+
+UI에는 합성된 활성 Ability 이름을 표시한다.
+
+## 9. 샘플 데이터 전환
+
+이전 임시 구조:
+
+```text
+weapon ID hardcoding → calculator rules
+```
+
+현재 구조:
+
+```text
+temporary weapon abilityIds
+→ validated Ability records
+→ AbilityEffect[]
+→ resolveAbilityRules
+→ calculator rules
+```
+
+따라서 임시 Sustained Hits와 Lethal Hits 무장도 실제 데이터 경로를 사용한다.
+
+## 10. 계산 엔진 경계
+
+계산 엔진의 `BattleInput`은 그대로 유지한다.
+
+```ts
+interface BattleInput {
+  hitReroll?: RerollPolicy;
+  woundReroll?: RerollPolicy;
+  criticalHitOn?: number;
+  sustainedHits?: SustainedHitCount;
+  lethalHits?: boolean;
+}
+```
+
+Ability 데이터 변경은 계산 엔진 내부에 ID 조회 책임을 추가하지 않는다.
+
+## 11. 테스트 구조
+
+### 스키마
+
+`packages/game-data-schema/src/validation.test.ts`
+
+- 모든 효과 종류 파싱
+- 기존 Ability 호환
+- 잘못된 효과 kind
+- 잘못된 재굴림 정책
+- 잘못된 Critical Hit 임계값
+- 잘못된 Sustained Hits 범위
+- 효과 배열 동결
+
+### 합성
+
+`apps/web/src/data/ability-rules.test.ts`
+
+- Unit·Weapon 효과 수집
+- 중복 Ability 제거
+- 재굴림 우선순위
+- Critical 임계값 우선순위
+- Lethal 합성
+- Sustained 동일값과 충돌
+- 누락 Ability
+- 실제 샘플 카탈로그 연결
+
+### 카탈로그
+
+`apps/web/src/data/catalog.test.ts`
+
+- Ability 참조 무결성
+- 샘플 효과 데이터
+- 임시 테스트 무장의 Ability 연결
+
+## 12. 전투 파이프라인
+
+```text
+Ability data
+→ resolved BattleInput rules
+→ AttackCount PMF
+→ reroll-aware hit outcome
+→ joint normal/critical hit PMF
+→ Sustained/Lethal resolution
+→ wound-roll count + automatic wounds
+→ failed save PMF
+→ damage allocation
+→ public distributions
+```
+
+## 13. 현재 구현 범위
 
 구현됨:
 
-- PMF·DiceExpression
-- 가변 공격·피해
-- non-spill 피해 할당
-- 명중·상처 재굴림
-- Critical Hit 결합분포
-- Sustained Hits
-- Lethal Hits
-- 두 능력 동시 적용
-- 정규화된 외부 데이터와 검증
-- CI·Pages
+- 선언형 AbilityEffect
+- 효과 런타임 검증
+- Unit·Weapon Ability 수집
+- 효과 합성 정책
+- 계산 입력 연결
+- 활성 Ability UI 표시
+- 임시 테스트 무장의 정식 Ability 데이터 전환
 
-미구현:
+다음 단계:
 
-- Ability 효과 데이터와 해석 계층
+- 일반 명중과 Critical Hit 상세 UI
+- Sustained 추가 명중 상세 UI
+- 상처 굴림과 자동 상처 상세 UI
+
+후속 미구현:
+
 - Critical Wound와 Mortal Wounds
 - 피해 감소와 Feel No Pain
 - 데이터 릴리스·IndexedDB
