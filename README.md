@@ -180,7 +180,7 @@ Ability
 
 ## 실행 및 검사
 
-로컬 실행은 Node.js 20.19.x 또는 22.12 이상이 필요합니다. GitHub Actions CI와 현재 Pages 시험 배포는 Node.js 24를 사용합니다.
+로컬 실행은 Node.js 20.19 이상인 20.x 또는 22.12 이상이 필요합니다. GitHub Actions CI와 현재 Pages 시험 배포는 Node.js 24를 사용합니다.
 
 ```bash
 npm ci
