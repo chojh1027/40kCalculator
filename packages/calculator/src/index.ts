@@ -4,8 +4,23 @@ import {
   type DiceExpression,
 } from "./dice-expression";
 import { Pmf } from "./pmf";
+import {
+  hitCountPmf,
+  rollOutcomeProbabilities,
+  type HitCountState,
+  type RerollPolicy,
+} from "./roll-rules";
 
 export type { DiceExpression } from "./dice-expression";
+export {
+  hitCountPmf,
+  rollOutcomeProbabilities,
+} from "./roll-rules";
+export type {
+  HitCountState,
+  RerollPolicy,
+  RollOutcomeProbabilities,
+} from "./roll-rules";
 
 export type AttackCount = number | DiceExpression;
 export type DamageAmount = number | DiceExpression;
@@ -13,7 +28,10 @@ export type DamageAmount = number | DiceExpression;
 export interface BattleInput {
   attacks: AttackCount;
   skill: number;
+  hitReroll?: RerollPolicy;
+  criticalHitOn?: number;
   strength: number;
+  woundReroll?: RerollPolicy;
   armorPenetration: number;
   damage: DamageAmount;
   targetToughness: number;
@@ -30,6 +48,11 @@ export interface DefenderDamageState {
 }
 
 export interface OutcomeProbability extends DefenderDamageState {
+  probability: number;
+}
+
+export interface HitOutcomeProbability extends HitCountState {
+  totalHits: number;
   probability: number;
 }
 
@@ -51,10 +74,13 @@ export interface CalculationResult {
     mostLikelyOutcome: OutcomeProbability;
     unitDestroyedProbability: number;
   };
+  hitOutcomeDistribution: HitOutcomeProbability[];
   outcomeDistribution: OutcomeProbability[];
   destroyedModelDistribution: DestroyedModelProbability[];
   stageDistributions: {
     attacks: ValueProbability[];
+    normalHits: ValueProbability[];
+    criticalHits: ValueProbability[];
     hits: ValueProbability[];
     wounds: ValueProbability[];
     failedSaves: ValueProbability[];
@@ -64,6 +90,8 @@ export interface CalculationResult {
   };
   stageBreakdown: {
     expectedAttacks: number;
+    expectedNormalHits: number;
+    expectedCriticalHits: number;
     expectedHits: number;
     expectedWounds: number;
     expectedFailedSaves: number;
@@ -214,6 +242,10 @@ function toValueDistribution(distribution: Pmf<number>): ValueProbability[] {
     .sort((left, right) => left.value - right.value);
 }
 
+function hitCountStateKey(state: HitCountState): string {
+  return `${state.normalHits}:${state.criticalHits}`;
+}
+
 function stateKey(state: DefenderDamageState): string {
   return `${state.destroyedModels}:${state.currentModelRemainingWounds}:${state.unitDestroyed ? 1 : 0}`;
 }
@@ -323,23 +355,34 @@ export function calculateBattle(input: BattleInput): CalculationResult {
   const damage = damageAmountToPmf(input.damage);
   validateInput(input);
 
-  const hitProbability = rollSuccessProbability(input.skill);
-  const woundProbability = rollSuccessProbability(woundTarget(input.strength, input.targetToughness));
+  const hitRoll = rollOutcomeProbabilities(
+    input.skill,
+    input.hitReroll,
+    input.criticalHitOn ?? 6,
+  );
+  const woundRoll = rollOutcomeProbabilities(
+    woundTarget(input.strength, input.targetToughness),
+    input.woundReroll,
+  );
   const saveTarget = savingThrowTarget(
     input.targetSave,
     input.armorPenetration,
     input.targetInvulnerableSave,
   );
   const failedSaveProbability = 1 - rollSuccessProbability(saveTarget);
-  const woundFromAttackProbability = hitProbability * woundProbability;
-  const unsavedAttackProbability = woundFromAttackProbability * failedSaveProbability;
 
-  const hits = attacks.flatMap((attackCount) => binomialPmf(attackCount, hitProbability));
-  const wounds = attacks.flatMap((attackCount) =>
-    binomialPmf(attackCount, woundFromAttackProbability),
+  const hitStates = attacks.flatMap(
+    (attackCount) => hitCountPmf(attackCount, hitRoll),
+    hitCountStateKey,
   );
-  const failedSaves = attacks.flatMap((attackCount) =>
-    binomialPmf(attackCount, unsavedAttackProbability),
+  const normalHits = hitStates.map((state) => state.normalHits);
+  const criticalHits = hitStates.map((state) => state.criticalHits);
+  const hits = hitStates.map((state) => state.normalHits + state.criticalHits);
+  const wounds = hits.flatMap((hitCount) =>
+    binomialPmf(hitCount, woundRoll.totalSuccess),
+  );
+  const failedSaves = wounds.flatMap((woundCount) =>
+    binomialPmf(woundCount, failedSaveProbability),
   );
 
   const maximumFailedSaves = failedSaves.entries.reduce(
@@ -360,6 +403,16 @@ export function calculateBattle(input: BattleInput): CalculationResult {
     },
     stateKey,
   );
+
+  const hitOutcomeDistribution = hitStates.entries
+    .map(({ value, probability }) => ({
+      ...value,
+      totalHits: value.normalHits + value.criticalHits,
+      probability,
+    }))
+    .sort((left, right) =>
+      left.totalHits - right.totalHits || left.criticalHits - right.criticalHits,
+    );
 
   const outcomeDistribution = outcomes.entries
     .map(({ value, probability }) => ({ ...value, probability }))
@@ -401,6 +454,11 @@ export function calculateBattle(input: BattleInput): CalculationResult {
   const effectiveDamageDistribution = outcomes.map(effectiveDamage);
   const destroyedModelsDistribution = outcomes.map((outcome) => outcome.destroyedModels);
   const expectedAttacks = attacks.expectation((attackCount) => attackCount);
+  const expectedNormalHits = normalHits.expectation((hitCount) => hitCount);
+  const expectedCriticalHits = criticalHits.expectation((hitCount) => hitCount);
+  const expectedHits = hits.expectation((hitCount) => hitCount);
+  const expectedWounds = wounds.expectation((woundCount) => woundCount);
+  const expectedFailedSaves = failedSaves.expectation((failedSaveCount) => failedSaveCount);
   const expectedDamagePerFailedSave = damage.expectation((damageValue) => damageValue);
 
   return {
@@ -410,10 +468,13 @@ export function calculateBattle(input: BattleInput): CalculationResult {
       mostLikelyOutcome: { ...mostLikely.value, probability: mostLikely.probability },
       unitDestroyedProbability,
     },
+    hitOutcomeDistribution,
     outcomeDistribution,
     destroyedModelDistribution,
     stageDistributions: {
       attacks: toValueDistribution(attacks),
+      normalHits: toValueDistribution(normalHits),
+      criticalHits: toValueDistribution(criticalHits),
       hits: toValueDistribution(hits),
       wounds: toValueDistribution(wounds),
       failedSaves: toValueDistribution(failedSaves),
@@ -423,9 +484,11 @@ export function calculateBattle(input: BattleInput): CalculationResult {
     },
     stageBreakdown: {
       expectedAttacks,
-      expectedHits: expectedAttacks * hitProbability,
-      expectedWounds: expectedAttacks * woundFromAttackProbability,
-      expectedFailedSaves: expectedAttacks * unsavedAttackProbability,
+      expectedNormalHits,
+      expectedCriticalHits,
+      expectedHits,
+      expectedWounds,
+      expectedFailedSaves,
       expectedDamagePerFailedSave,
       expectedFinalDamage: expectedEffectiveDamage,
     },
