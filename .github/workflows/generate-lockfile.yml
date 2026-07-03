@@ -1,11 +1,11 @@
 name: Generate npm lockfile
 
 on:
-  push:
-    branches: [main]
+  pull_request:
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   generate:
@@ -19,14 +19,9 @@ jobs:
           node-version: 24
       - name: Generate package-lock.json
         run: npm install --package-lock-only --ignore-scripts
-      - name: Commit lockfile
-        run: |
-          if git diff --quiet -- package-lock.json; then
-            echo "package-lock.json is already current."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
-          git commit -m "build: add npm dependency lockfile"
-          git push
+      - name: Upload lockfile artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: npm-lockfile
+          path: package-lock.json
+          if-no-files-found: error
