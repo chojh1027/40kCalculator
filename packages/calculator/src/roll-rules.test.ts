@@ -6,14 +6,12 @@ import {
 
 describe("rollOutcomeProbabilities", () => {
   it("separates failures, normal successes, and critical successes", () => {
-    expect(
-      rollOutcomeProbabilities(3, { kind: "none" }, 6),
-    ).toEqual({
-      failure: 2 / 6,
-      normalSuccess: 3 / 6,
-      criticalSuccess: 1 / 6,
-      totalSuccess: 4 / 6,
-    });
+    const result = rollOutcomeProbabilities(3, { kind: "none" }, 6);
+
+    expect(result.failure).toBeCloseTo(2 / 6, 12);
+    expect(result.normalSuccess).toBeCloseTo(3 / 6, 12);
+    expect(result.criticalSuccess).toBeCloseTo(1 / 6, 12);
+    expect(result.totalSuccess).toBeCloseTo(4 / 6, 12);
   });
 
   it("rerolls initial ones exactly once", () => {
@@ -94,5 +92,25 @@ describe("hitCountPmf", () => {
         probability: 1,
       },
     ]);
+  });
+
+  it("rejects inconsistent outcome probability objects", () => {
+    expect(() =>
+      hitCountPmf(1, {
+        failure: 1 / 2,
+        normalSuccess: 1 / 2,
+        criticalSuccess: 1 / 2,
+        totalSuccess: 1,
+      }),
+    ).toThrow("Roll outcome probabilities must sum to 1.");
+
+    expect(() =>
+      hitCountPmf(1, {
+        failure: 1 / 2,
+        normalSuccess: 1 / 3,
+        criticalSuccess: 1 / 6,
+        totalSuccess: 2 / 3,
+      }),
+    ).toThrow("totalSuccess must equal normalSuccess plus criticalSuccess.");
   });
 });
