@@ -4,6 +4,7 @@ import {
   repeatAttackCount,
   type AttackCount,
   type BattleInput,
+  type DamageAmount,
   type ValueProbability,
 } from "@40k-calculator/calculator";
 import {
@@ -28,12 +29,12 @@ const modelLabel = (count: number): string => `${count} model${count === 1 ? "" 
 const countLabel = (count: number, singular: string): string =>
   `${count} ${singular}${count === 1 ? "" : "s"}`;
 
-function formatAttackCount(attacks: AttackCount): string {
-  if (typeof attacks === "number") return String(attacks);
-  if (attacks.kind === "fixed") return String(attacks.value);
+function formatDiceValue(value: AttackCount | DamageAmount): string {
+  if (typeof value === "number") return String(value);
+  if (value.kind === "fixed") return String(value.value);
 
-  const dice = `${attacks.count === 1 ? "" : attacks.count}D${attacks.sides}`;
-  const modifier = attacks.modifier ?? 0;
+  const dice = `${value.count === 1 ? "" : value.count}D${value.sides}`;
+  const modifier = value.modifier ?? 0;
   if (modifier === 0) return dice;
   return `${dice}${modifier > 0 ? "+" : ""}${modifier}`;
 }
@@ -317,11 +318,11 @@ export function App() {
 
           <dl className="weapon-profile" aria-label={`${weapon.name} profile`}>
             <div><dt>Models</dt><dd>{attackingModelCount}</dd></div>
-            <div><dt>A</dt><dd>{formatAttackCount(weapon.attacks)}</dd></div>
+            <div><dt>A</dt><dd>{formatDiceValue(weapon.attacks)}</dd></div>
             <div><dt>{skillLabel}</dt><dd>{skill}+</dd></div>
             <div><dt>S</dt><dd>{weapon.strength}</dd></div>
             <div><dt>AP</dt><dd>{weapon.armorPenetration}</dd></div>
-            <div><dt>D</dt><dd>{weapon.damage}</dd></div>
+            <div><dt>D</dt><dd>{formatDiceValue(weapon.damage)}</dd></div>
           </dl>
 
           <div className="control-section">
@@ -377,7 +378,7 @@ export function App() {
             )}
           </div>
 
-          <p className="scope-note">The current MVP does not yet support re-rolls, critical hits, variable damage, or Feel No Pain.</p>
+          <p className="scope-note">The current MVP does not yet support re-rolls, critical hits, damage modifiers, or Feel No Pain.</p>
         </form>
 
         <section className="panel results" aria-live="polite">
@@ -425,6 +426,12 @@ export function App() {
               average={result.stageBreakdown.expectedFailedSaves}
               rows={result.stageDistributions.failedSaves}
               formatValue={(value) => countLabel(value, "failed save")}
+            />
+            <ResultStage
+              title="Average Damage per Failed Save"
+              average={result.stageBreakdown.expectedDamagePerFailedSave}
+              rows={result.stageDistributions.damagePerFailedSave}
+              formatValue={(value) => `${value} damage`}
             />
             <ResultStage
               title="Average Effective Damage"
