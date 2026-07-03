@@ -1,6 +1,6 @@
 # Dice Servitor 개발 로드맵
 
-- 문서 상태: v0.12
+- 문서 상태: v0.13
 - 기준일: 2026-07-03
 - 대상 저장소: `chojh1027/40kCalculator`
 - 관련 문서: [프로젝트 프로포절](./proposal.md), [기술 설계서](./technical-design.md), [개발 지침 및 진행 현황](./development-guide.md)
@@ -31,19 +31,18 @@
 - 선언형 `AbilityEffect` 데이터
 - Unit·Weapon Ability 수집과 효과 합성
 - Ability 효과의 `BattleInput` 연결
+- 규칙별 상세 결과와 확률분포 UI
 - 외부 JSON 게임 데이터와 런타임 검증
-- 골든·불변식·규칙 통합 테스트
+- 골든·불변식·규칙·표시 정책 테스트
 - 루트 lockfile과 `npm ci` 기반 CI·Pages 배포
 
-Ability 처리 흐름:
+결과 표시 흐름:
 
 ```text
-Unit ability IDs + Weapon ability IDs
-→ Ability lookup
-→ declarative effect validation
-→ effect composition
-→ BattleInput rule fields
-→ probability calculation
+CalculationResult
+→ result-view.ts 표시 모델
+→ 규칙별 조건부 단계 구성
+→ DetailedResults.tsx 접기형 결과 카드
 ```
 
 ### 완료된 기반
@@ -60,15 +59,16 @@ Unit ability IDs + Weapon ability IDs
 | Lethal Hits | ✅ | 원래 Critical Hit 자동 상처 |
 | 데이터 스키마 | ✅ | Unit·Model·Weapon·Ability 분리 |
 | Ability 효과 연결 | ✅ | 선언형 효과와 합성 계층 |
+| 상세 결과 UI | ✅ | 규칙별 평균과 전체 분포 |
 | 외부 JSON·검증 | ✅ | 값·ID·참조·효과 무결성 |
 | 재현 가능한 설치 | ✅ | lockfile v3, `npm ci` |
 
 ### 현재 핵심 제약
 
-- 상세 결과 UI가 일반 명중·Critical Hit·자동 상처를 분리해 보여주지 않는다.
 - Critical Wound와 별도 치명상 경로가 없다.
 - 단일 공격 그룹만 지원한다.
 - 데이터 manifest, 진영별 청크와 IndexedDB가 없다.
+- 검색, 프리셋, URL 공유와 다국어가 없다.
 
 ---
 
@@ -110,42 +110,49 @@ Unit ability IDs + Weapon ability IDs
 
 상태: ✅ 완료
 
+- `AbilityEffect` 선언형 union
+- 효과 런타임 검증
+- Unit·Weapon Ability ID 수집
+- 재굴림·Critical·Sustained·Lethal 합성 정책
+- 합성 결과의 `BattleInput` 연결
+- 임시 테스트 무장의 정식 Ability 데이터 전환
+
+### 단계 11: 상세 결과 UI
+
+상태: ✅ 완료
+
 구현 파일:
 
 ```text
-packages/game-data-schema/src/ability-effects.ts
-packages/game-data-schema/src/types.ts
-packages/game-data-schema/src/validation.ts
-packages/game-data-schema/src/validation.test.ts
-apps/web/src/data/ability-rules.ts
-apps/web/src/data/ability-rules.test.ts
-apps/web/src/data/catalog.ts
-apps/web/src/data/catalog.json
+apps/web/src/DetailedResults.tsx
+apps/web/src/data/result-view.ts
+apps/web/src/data/result-view.test.ts
 apps/web/src/App.tsx
+apps/web/src/styles.css
 ```
 
-지원 효과:
+표시 그룹:
 
 ```text
-hit-reroll
-wound-reroll
-critical-hit-threshold
-sustained-hits
-lethal-hits
+Attacks
+Hit Resolution
+Wound Resolution
+Saves and Damage
 ```
 
-합성 정책:
+세부 표시:
 
-- Unit과 Weapon의 Ability ID를 순서대로 합친다.
-- 같은 Ability ID는 한 번만 적용한다.
-- 재굴림은 `none < ones < failures` 순으로 더 강한 정책을 선택한다.
-- Critical Hit 임계값은 가장 낮은 값을 선택한다.
-- Lethal Hits는 하나라도 있으면 활성화한다.
-- 같은 Sustained Hits 값은 중복 허용한다.
-- 서로 다른 Sustained Hits 값은 모호성을 막기 위해 충돌 오류로 처리한다.
-- 누락 Ability 참조는 해석 단계에서도 오류 처리한다.
+- 일반 명중과 Critical Hit 평균·분포 분리
+- Sustained Hits 활성 시 추가 명중 평균·분포 표시
+- 규칙 적용 후 총 명중 표시
+- 상처 굴림 수 표시
+- Lethal Hits 활성 시 자동 상처 평균·분포 표시
+- 총 상처, 실패 내성, 피해와 파괴 모델 분포 유지
+- 적용된 재굴림, Critical Hit 기준과 Ability 효과를 태그로 표시
+- 모든 단계는 접기형 카드로 유지
+- 모바일에서 라벨 폭과 카드 간격 조정
 
-임시 Sustained/Lethal 테스트 무장은 무장 ID 하드코딩이 아니라 정식 Ability 데이터로 계산된다.
+표시 정책은 React 컴포넌트와 분리된 순수 함수로 테스트한다.
 
 ---
 
@@ -196,20 +203,12 @@ lethal-hits
 상태: 🟡 진행 중
 
 - [x] 활성 Ability 이름 표시
-- [ ] 재굴림·Critical·Sustained·Lethal 세부 결과 표시
+- [x] 재굴림·Critical·Sustained·Lethal 세부 결과 표시
 - [ ] 전체 최종 상태 분포
 - [ ] 정확히 N개와 N개 이상 파괴 확률 구분
 - [ ] 검색과 자동 완성
 - [ ] 프리셋과 URL 공유
-- [ ] 모바일 접근성 개선
-
-다음 단계 설계 기준:
-
-- 평균 일반 명중과 평균 Critical Hit을 구분한다.
-- Sustained 추가 명중을 별도 행으로 표시한다.
-- 상처 굴림 수와 Lethal 자동 상처를 구분한다.
-- 규칙이 없는 경우 불필요한 행은 숨기거나 0으로 명확히 표시한다.
-- 모바일에서 결과 단계가 지나치게 길어지지 않도록 접기 구조를 유지한다.
+- [ ] 추가 모바일 접근성 개선
 
 ---
 
@@ -222,6 +221,16 @@ lethal-hits
 - [ ] 파일 해시와 무결성 검사
 - [ ] IndexedDB 저장
 - [ ] 과거 버전 전환과 캐시 복구
+
+다음 단계 설계 기준:
+
+- 첫 화면에서 전체 카탈로그를 한 번에 읽지 않는다.
+- manifest에서 릴리스 ID와 필요한 파일을 결정한다.
+- 공통 엔티티와 진영별 데이터 청크를 분리한다.
+- 네트워크 데이터는 기존 런타임 검증기를 반드시 통과한다.
+- 마지막 정상 데이터를 IndexedDB에 보관한다.
+- 데이터 갱신 실패 시 기존 정상 버전으로 복구한다.
+- 정적 배포와 GitHub Pages 환경을 유지한다.
 
 ---
 
@@ -265,11 +274,11 @@ release
 | 8 | 명중·상처 재굴림과 Critical Hit | ✅ |
 | 9 | Sustained Hits와 Lethal Hits | ✅ |
 | 10 | Ability 효과 연결 | ✅ |
-| 11 | 상세 결과 UI | ⬜ |
+| 11 | 상세 결과 UI | ✅ |
 | 12 | 데이터 릴리스와 IndexedDB | ⬜ |
 | 13 | 데이터 CLI와 다국어 | ⬜ |
 
-다음 개발 작업은 **지원 규칙별 상세 결과를 UI에 표시하는 것**이다.
+다음 개발 작업은 **데이터 릴리스 manifest, 진영별 청크와 IndexedDB 저장 계층을 구현하는 것**이다.
 
 ---
 

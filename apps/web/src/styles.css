@@ -39,7 +39,13 @@ dd { margin: 4px 0 0; font-weight: 750; }
 .likely-result > span { color: #a9adb1; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
 .likely-result > strong { display: grid; gap: 2px; font-size: clamp(1.1rem, 2.5vw, 1.45rem); line-height: 1.35; color: #f1ead8; }
 .outcome-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 4px; color: #9ba1a6; font-size: 0.78rem; }
-.result-stages { display: grid; gap: 10px; margin-top: 16px; }
+.applied-rules { margin-top: 16px; border: 1px solid #343a40; border-radius: 10px; background: #15191d; padding: 14px 16px; }
+.applied-rules h3, .result-group h3 { margin: 0; color: #aeb4b9; font-size: 0.78rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.rule-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
+.rule-tags span { border: 1px solid #4b4330; border-radius: 999px; background: #201d16; color: #dcc98f; padding: 6px 9px; font-size: 0.76rem; line-height: 1.2; }
+.result-groups { display: grid; gap: 22px; margin-top: 22px; }
+.result-group { display: grid; gap: 9px; }
+.result-stages { display: grid; gap: 10px; }
 .result-stage { border: 1px solid #3a4045; border-radius: 10px; background: #111519; overflow: hidden; }
 .result-stage summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 16px 17px; cursor: pointer; list-style: none; color: #d8dce0; }
 .result-stage summary::-webkit-details-marker { display: none; }
@@ -50,7 +56,7 @@ dd { margin: 4px 0 0; font-weight: 750; }
 .stage-distribution { max-height: 430px; overflow-y: auto; border-top: 1px solid #343a40; padding: 15px 17px 18px; }
 .stage-distribution > p { margin: 0 0 13px; color: #8f969c; font-size: 0.76rem; }
 .bars { display: grid; gap: 10px; }
-.bar-row { display: grid; grid-template-columns: minmax(86px, 120px) minmax(100px, 1fr) 58px; gap: 10px; align-items: center; font-size: 0.82rem; }
+.bar-row { display: grid; grid-template-columns: minmax(110px, 150px) minmax(100px, 1fr) 58px; gap: 10px; align-items: center; font-size: 0.82rem; }
 .bar-row > span { color: #c4c8cc; }
 .bar-track { height: 10px; border-radius: 99px; background: #2c3237; overflow: hidden; }
 .bar-fill { height: 100%; min-width: 2px; border-radius: inherit; background: linear-gradient(90deg, #876b32, #e3c16d); }
@@ -60,7 +66,10 @@ dd { margin: 4px 0 0; font-weight: 750; }
   .page-shell { width: min(100% - 20px, 680px); padding-top: 34px; }
   .layout { grid-template-columns: 1fr; }
   .weapon-profile div, .defender-profile div { padding-inline: 4px; }
-  .bar-row { grid-template-columns: minmax(78px, 102px) minmax(76px, 1fr) 54px; gap: 8px; font-size: 0.78rem; }
+  .applied-rules { padding-inline: 14px; }
+  .result-groups { gap: 19px; }
+  .bar-row { grid-template-columns: minmax(98px, 124px) minmax(68px, 1fr) 54px; gap: 8px; font-size: 0.76rem; }
   .result-stage summary { padding-inline: 14px; }
+  .result-stage summary span { font-size: 0.84rem; }
   .stage-distribution { padding-inline: 14px; }
 }

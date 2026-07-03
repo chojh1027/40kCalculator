@@ -5,8 +5,8 @@ import {
   type AttackCount,
   type BattleInput,
   type DamageAmount,
-  type ValueProbability,
 } from "@40k-calculator/calculator";
+import { DetailedResults } from "./DetailedResults";
 import { resolveAbilityRules } from "./data/ability-rules";
 import {
   ABILITIES_BY_ID,
@@ -23,13 +23,6 @@ const INITIAL_FACTION_ID = "space-marines";
 const INITIAL_ATTACKING_UNIT_ID = "intercessor-squad";
 const INITIAL_DEFENDING_UNIT_ID = "intercessor-squad";
 const INITIAL_WEAPON_ID = "bolt-rifle";
-const MIN_VISIBLE_PROBABILITY = 0.00005;
-
-const percent = (value: number): string => `${(value * 100).toFixed(1)}%`;
-const decimal = (value: number): string => value.toFixed(2);
-const modelLabel = (count: number): string => `${count} model${count === 1 ? "" : "s"}`;
-const countLabel = (count: number, singular: string): string =>
-  `${count} ${singular}${count === 1 ? "" : "s"}`;
 
 function formatDiceValue(value: AttackCount | DamageAmount): string {
   if (typeof value === "number") return String(value);
@@ -53,60 +46,6 @@ function getFirstFactionForAlliance(allianceId: string) {
 
 function getFirstUnitForFaction(factionId: string) {
   return UNITS.find((unit) => unit.factionId === factionId);
-}
-
-interface ProbabilityBarsProps {
-  rows: ValueProbability[];
-  formatValue: (value: number) => string;
-}
-
-function ProbabilityBars({ rows, formatValue }: ProbabilityBarsProps) {
-  const visibleRows = rows.filter((row) => row.probability > MIN_VISIBLE_PROBABILITY);
-
-  return (
-    <div className="bars">
-      {visibleRows.map((row) => (
-        <div className="bar-row" key={row.value}>
-          <span>{formatValue(row.value)}</span>
-          <div
-            className="bar-track"
-            role="img"
-            aria-label={`${formatValue(row.value)}: ${percent(row.probability)}`}
-          >
-            <div className="bar-fill" style={{ width: `${row.probability * 100}%` }} />
-          </div>
-          <strong>{percent(row.probability)}</strong>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-interface ResultStageProps extends ProbabilityBarsProps {
-  title: string;
-  average: number;
-  averageSuffix?: string;
-}
-
-function ResultStage({
-  title,
-  average,
-  averageSuffix = "",
-  rows,
-  formatValue,
-}: ResultStageProps) {
-  return (
-    <details className="result-stage">
-      <summary>
-        <span>{title}</span>
-        <strong>{decimal(average)}{averageSuffix}</strong>
-      </summary>
-      <div className="stage-distribution">
-        <p>Probability distribution</p>
-        <ProbabilityBars rows={rows} formatValue={formatValue} />
-      </div>
-    </details>
-  );
 }
 
 export function App() {
@@ -203,8 +142,6 @@ export function App() {
     input.targetWounds,
     input.targetModelCount,
   ]);
-
-  const mostLikely = result.summary.mostLikelyOutcome;
 
   const selectFirstWeaponForUnit = (unit: Unit): void => {
     const firstWeapon = getUnitWeapons(unit)[0];
@@ -403,73 +340,7 @@ export function App() {
           </p>
         </form>
 
-        <section className="panel results" aria-live="polite">
-          <h2>Calculation Results</h2>
-
-          <div className="likely-result">
-            <span>Most Likely Outcome</span>
-            <strong>
-              {mostLikely.unitDestroyed ? (
-                "Defending unit destroyed"
-              ) : (
-                <>
-                  <span>{modelLabel(mostLikely.destroyedModels)} destroyed</span>
-                  <span>Next model has {mostLikely.currentModelRemainingWounds}W remaining</span>
-                </>
-              )}
-            </strong>
-            <div className="outcome-meta">
-              <span>Exact outcome chance: {percent(mostLikely.probability)}</span>
-              <span>Unit destroyed chance: {percent(result.summary.unitDestroyedProbability)}</span>
-            </div>
-          </div>
-
-          <div className="result-stages">
-            <ResultStage
-              title="Average Attacks"
-              average={result.stageBreakdown.expectedAttacks}
-              rows={result.stageDistributions.attacks}
-              formatValue={(value) => countLabel(value, "attack")}
-            />
-            <ResultStage
-              title="Average Hits"
-              average={result.stageBreakdown.expectedHits}
-              rows={result.stageDistributions.hits}
-              formatValue={(value) => countLabel(value, "hit")}
-            />
-            <ResultStage
-              title="Average Wounds"
-              average={result.stageBreakdown.expectedWounds}
-              rows={result.stageDistributions.wounds}
-              formatValue={(value) => countLabel(value, "wound")}
-            />
-            <ResultStage
-              title="Average Failed Saves"
-              average={result.stageBreakdown.expectedFailedSaves}
-              rows={result.stageDistributions.failedSaves}
-              formatValue={(value) => countLabel(value, "failed save")}
-            />
-            <ResultStage
-              title="Average Damage per Failed Save"
-              average={result.stageBreakdown.expectedDamagePerFailedSave}
-              rows={result.stageDistributions.damagePerFailedSave}
-              formatValue={(value) => `${value} damage`}
-            />
-            <ResultStage
-              title="Average Effective Damage"
-              average={result.summary.expectedEffectiveDamage}
-              averageSuffix="W"
-              rows={result.stageDistributions.effectiveDamage}
-              formatValue={(value) => `${value}W`}
-            />
-            <ResultStage
-              title="Average Models Destroyed"
-              average={result.summary.expectedDestroyedModels}
-              rows={result.stageDistributions.destroyedModels}
-              formatValue={modelLabel}
-            />
-          </div>
-        </section>
+        <DetailedResults result={result} rules={abilityRules} />
       </section>
     </main>
   );
