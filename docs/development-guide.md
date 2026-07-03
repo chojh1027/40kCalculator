@@ -1,6 +1,6 @@
 # Dice Servitor 개발 지침 및 진행 현황
 
-- 문서 상태: v0.8.1
+- 문서 상태: v0.9
 - 기준일: 2026-07-03
 - 대상 저장소: `chojh1027/40kCalculator`
 - 관련 문서: [프로젝트 프로포절](./proposal.md), [기술 설계서](./technical-design.md), [개발 로드맵](./roadmap.md)
@@ -120,7 +120,54 @@ Dice Servitor는 워해머 40,000의 전투 결과를 단일 무작위 시뮬레
 
 ---
 
-## 5. 테스트 지침
+## 5. 의존성 및 설치 지침
+
+### 기준 파일
+
+- npm Workspaces 전체는 저장소 루트의 `package-lock.json` 하나로 관리한다.
+- `apps/*` 또는 `packages/*` 아래에 별도 lockfile을 만들지 않는다.
+- `.npmrc`는 다음 정책을 고정한다.
+
+```ini
+package-lock=true
+lockfile-version=3
+save-exact=true
+```
+
+### 일반 설치
+
+새로 내려받은 저장소와 CI처럼 lockfile과 정확히 같은 환경이 필요할 때는 루트에서 실행한다.
+
+```bash
+npm ci
+```
+
+### 의존성 변경
+
+의존성을 추가·제거·갱신할 때만 루트에서 `npm install`을 사용한다.
+
+```bash
+npm install <package> --workspace <workspace-name>
+npm uninstall <package> --workspace <workspace-name>
+```
+
+의존성 변경 PR 또는 커밋에는 다음 파일을 함께 포함한다.
+
+- 변경된 `package.json`
+- 갱신된 루트 `package-lock.json`
+
+lockfile만 임의로 편집하지 않는다. 워크스페이스 패키지의 `file:` 참조도 루트 lockfile에서 관리한다.
+
+### CI와 배포
+
+- GitHub Actions CI와 GitHub Pages 빌드는 `npm ci`를 사용한다.
+- `actions/setup-node`의 npm 캐시는 루트 `package-lock.json`을 키로 사용한다.
+- lockfile과 `package.json`이 불일치하면 설치 단계에서 실패하도록 유지한다.
+- CI 기준 Node.js는 24이며, 프로젝트의 지원 범위는 루트 `engines.node`를 따른다.
+
+---
+
+## 6. 테스트 지침
 
 모든 계산 엔진 변경은 가능한 범위에서 다음을 검증한다.
 
@@ -148,8 +195,6 @@ golden.test.ts           대표 전투 결과 고정
 invariants.test.ts       확률·상태·결정성·단조성 검증
 ```
 
-### 골든 테스트 기준
-
 현재 골든 조합:
 
 - 고정 공격 + 고정 피해
@@ -158,34 +203,19 @@ invariants.test.ts       확률·상태·결정성·단조성 검증
 - 고정 공격 + D6 피해
 - D6 공격 + D6 피해
 
-골든 테스트는 단계별 기대값, 평균 유효 피해, 평균 파괴 모델 수, 전멸 확률, 최빈 방어 상태와 그 확률을 고정한다. 골든 값 변경은 규칙 변경 또는 버그 수정 근거가 있을 때만 허용한다.
-
-### 불변식 테스트 기준
-
-- 모든 공개 PMF의 확률 합은 허용 오차 내에서 1이다.
-- 값 분포와 방어 상태 분포에 중복 키가 없다.
-- 전멸 상태는 파괴 모델 수가 목표 모델 수이고 잔여 운드가 0이다.
-- 비전멸 상태의 잔여 운드는 1 이상 최대 운드 이하다.
-- 누적 파괴 확률은 단조 감소한다.
-- 분포에서 계산한 기대값은 요약 기대값과 일치한다.
-- 내성이 좋아지면 평균 피해와 전멸 확률이 증가하지 않는다.
-- 모델 수가 증가하면 전멸 확률이 증가하지 않는다.
-- 일반 피해 이벤트 한 번은 모델 하나만 파괴할 수 있다.
+골든 값 변경은 규칙 변경 또는 버그 수정 근거가 있을 때만 허용한다.
 
 ### 검사 명령
 
 ```bash
-npm test
-npm run typecheck
-npm run build
 npm run check
 ```
 
-무작위 시뮬레이션은 사용자 결과 산출 방식이 아니라 검증 보조 수단으로만 사용한다.
+위 명령은 타입 검사, 단위·골든·불변식 테스트와 프로덕션 빌드를 실행한다.
 
 ---
 
-## 6. 현재 저장소 구조
+## 7. 현재 저장소 구조
 
 ```text
 40kCalculator/
@@ -203,13 +233,15 @@ npm run check
 │     ├─ pmf.test.ts
 │     ├─ dice-expression.ts
 │     └─ dice-expression.test.ts
+├─ package-lock.json
+├─ .npmrc
 ├─ docs/
 └─ .github/workflows/
 ```
 
 ---
 
-## 7. 개발 진행 현황
+## 8. 개발 진행 현황
 
 상태 표기: ✅ 완료 · 🟡 부분 구현 · ⬜ 미구현
 
@@ -219,9 +251,11 @@ npm run check
 |---|---:|---|
 | npm Workspaces | ✅ | 웹 앱과 계산 엔진 분리 |
 | TypeScript strict | ✅ | 공통 설정 사용 |
-| GitHub Actions CI | ✅ | 타입 검사, 테스트, 빌드 |
-| GitHub Pages | ✅ | 정적 사이트 배포 |
-| lockfile 정책 | ⬜ | 재현 가능한 설치 방식 확정 필요 |
+| 루트 lockfile | ✅ | npm lockfile v3 |
+| clean install | ✅ | CI와 배포에서 `npm ci` |
+| npm 캐시 | ✅ | `package-lock.json` 기준 |
+| GitHub Actions CI | ✅ | clean install, 타입 검사, 테스트, 빌드 |
+| GitHub Pages | ✅ | 잠긴 의존성으로 정적 사이트 배포 |
 
 ### 계산 엔진
 
@@ -246,6 +280,7 @@ npm run check
 | 동일 입력 결정성 | ✅ | 입력 매트릭스 반복 비교 |
 | 방어 내성 단조성 | ✅ | 내성 개선 시 피해·전멸 확률 비증가 |
 | 모델 수 단조성 | ✅ | 모델 수 증가 시 전멸 확률 비증가 |
+| `npm ci` 통합 검증 | ✅ | clean install 이후 전체 검사 통과 |
 | 속성 기반 테스트 프레임워크 | ⬜ | 현재는 명시적 입력 매트릭스 사용 |
 
 ### 웹 UI와 데이터
@@ -257,12 +292,13 @@ npm run check
 | 임시 D6 테스트 무장 | ✅ | 공격·피해 검증용 |
 | 유닛·무장 타입 분리 | ✅ | ID 참조 방식 |
 | 외부 JSON | ⬜ | 현재 TypeScript 카탈로그 |
-| 런타임 검증 | ⬜ | 후속 단계 |
+| `ModelProfile` 분리 | ⬜ | 다음 단계 |
+| 런타임 검증 | ⬜ | 다음 단계 |
 | IndexedDB·버전 전환 | ⬜ | 후속 단계 |
 
 ---
 
-## 8. 현재 알려진 제약과 기술 부채
+## 9. 현재 알려진 제약과 기술 부채
 
 - 단일 공격 그룹만 처리한다.
 - 재굴림, 치명타, 추가 명중과 별도 치명상 경로가 없다.
@@ -271,23 +307,22 @@ npm run check
 - 유닛과 모델 프로필이 하나의 `Unit` 타입에 결합돼 있다.
 - 게임 데이터가 애플리케이션 번들에 포함된다.
 - 속성 기반 테스트 프레임워크는 아직 없다.
-- lockfile 정책이 확정되지 않았다.
 
 ---
 
-## 9. 다음 개발 우선순위
+## 10. 다음 개발 우선순위
 
-1. 의존성 lockfile 정책 확정
-2. CI 설치 명령을 재현 가능한 방식으로 변경
-3. Node.js와 npm 버전 정책 문서화
-4. 정식 데이터 스키마와 외부 JSON 분리
-5. 중복 ID와 누락 참조 검증
-6. 런타임 데이터 검증 도입
-7. 상세 결과 UI 확장
+1. `Alliance`, `Faction`, `Unit`, `ModelProfile`, `WeaponProfile` 스키마 확정
+2. `Unit`과 `ModelProfile` 책임 분리
+3. 샘플 카탈로그를 외부 JSON으로 이전
+4. 중복 ID와 누락 참조 검증
+5. 수치 범위와 `DiceExpression` 런타임 검증
+6. 데이터 접근 계층 구성
+7. 데이터 출처와 규칙 버전 메타데이터 정의
 
 ---
 
-## 10. 기능 추가 체크리스트
+## 11. 기능 추가 체크리스트
 
 - [ ] 공식 규칙과 적용 조건을 정의했다.
 - [ ] 계산 파이프라인의 개입 단계를 정했다.
@@ -295,13 +330,14 @@ npm run check
 - [ ] 확률 합, 상태 병합과 결정성을 검증했다.
 - [ ] 기존 고정값 결과의 회귀 여부를 검증했다.
 - [ ] 골든 값 변경 근거를 기록했다.
+- [ ] 의존성 변경 시 루트 lockfile을 갱신했다.
 - [ ] UI에서 지원 범위와 제한을 표시했다.
 - [ ] 관련 문서를 갱신했다.
-- [ ] `npm run check`를 통과했다.
+- [ ] `npm ci` 이후 `npm run check`를 통과했다.
 
 ---
 
-## 11. 문서 갱신 규칙
+## 12. 문서 갱신 규칙
 
 - 구현 상태 변경: `development-guide.md`, `roadmap.md`
 - 구조 또는 기술 결정 변경: `technical-design.md`
