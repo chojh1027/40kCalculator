@@ -1,11 +1,11 @@
 # Dice Servitor 개발 지침 및 진행 현황
 
-- 문서 상태: v0.14
-- 기준일: 2026-07-03
+- 문서 상태: v0.15
+- 기준일: 2026-07-04
 - 대상 저장소: `chojh1027/40kCalculator`
 - 관련 문서: [프로젝트 프로포절](./proposal.md), [기술 설계서](./technical-design.md), [개발 로드맵](./roadmap.md)
 
-이 문서는 개발 원칙과 실제 구현 상태를 관리한다.
+이 문서는 개발 원칙, 모듈 책임, 테스트 기준과 실제 구현 상태를 관리한다. 작업 순서와 완료 여부는 `roadmap.md`를 단일 기준으로 사용한다.
 
 ---
 
@@ -17,11 +17,13 @@
 - 모든 공개 분포는 허용 오차 내에서 합이 1이어야 한다.
 - 같은 입력은 같은 결과를 반환해야 한다.
 - 새 규칙은 기존 미적용 결과를 회귀시키지 않아야 한다.
+- 평균, 최빈 결과와 개별 확률을 혼동하지 않는다.
 
 ### 모듈 책임
 
 - `packages/calculator`: 순수 전투 확률 계산
 - `packages/game-data-schema`: 데이터 타입과 런타임 검증
+- `apps/web/src/data/catalog.ts`: 검증된 카탈로그 접근
 - `apps/web/src/data/ability-rules.ts`: Ability 규칙 해석
 - `apps/web/src/data/result-view.ts`: 계산 결과의 UI 표시 정책
 - `apps/web/src/DetailedResults.tsx`: 상세 결과 렌더링
@@ -33,6 +35,14 @@
 - UI 컴포넌트가 Ability ID별 하드코딩을 갖지 않는다.
 - 계산 결과 표시 순서와 조건은 React 컴포넌트 밖의 순수 함수에서 결정한다.
 - 계산 엔진의 결과를 UI 편의를 위해 다시 계산하지 않는다.
+- 현재 샘플 카탈로그와 향후 공식·커뮤니티 데이터 배포를 명확히 구분한다.
+
+### 문서 정확성
+
+- 계획 기능을 구현 완료로 표시하지 않는다.
+- 실제 배포 환경과 CI 버전을 문서에 정확히 기록한다.
+- 구현 변경 시 README, roadmap, development-guide, technical-design 중 영향받는 문서를 함께 갱신한다.
+- 제품 목적이나 완료 기준이 달라질 때만 proposal을 수정한다.
 
 ---
 
@@ -52,15 +62,16 @@ type AbilityEffect =
 - 재굴림 정책은 `none`, `ones`, `failures`
 - Critical Hit 임계값은 `2~6`
 - Sustained Hits 결과 범위는 `0~6`
-- 미지원 효과와 필드는 거부
-- `effects` 생략은 빈 배열로 호환
+- 미지원 효과와 미지원 필드는 거부
+- JSON에서 `effects` 생략은 빈 배열로 호환
+- 파싱 결과와 효과 배열은 동결
 
 합성 정책:
 
 - Unit Ability 이후 Weapon Ability 순서
-- 중복 Ability ID 한 번만 적용
-- 재굴림은 가장 강한 정책
-- Critical Hit은 가장 낮은 임계값
+- 중복 Ability ID는 한 번만 적용
+- 재굴림은 가장 강한 정책 선택
+- Critical Hit은 가장 낮은 임계값 선택
 - Lethal Hits는 논리 OR
 - 동일 Sustained Hits 중복 허용
 - 상충 Sustained Hits 오류 처리
@@ -77,19 +88,29 @@ type AbilityEffect =
 
 ### Critical Hit
 
-일반 명중과 별도 상태로 유지한다.
+- 일반 명중과 별도 상태로 유지한다.
+- 기본 Critical Hit 기준은 자연 6이다.
+- Ability 효과가 있을 때 `2~6` 범위에서 기준을 변경한다.
 
 ### Sustained Hits
 
-- Critical Hit마다 독립적으로 추가 명중 수를 결정한다.
+- 원래 Critical Hit마다 독립적으로 추가 명중 수를 결정한다.
 - 추가 명중은 일반 명중이다.
 - 추가 명중은 새로운 명중 굴림이 아니다.
+- 추가 명중 자체는 다시 Critical Hit이 되지 않는다.
 
 ### Lethal Hits
 
 - 원래 Critical Hit마다 자동 상처 하나를 만든다.
 - 자동 상처는 상처 굴림과 상처 재굴림을 건너뛴다.
-- 이후 내성 굴림은 정상적으로 적용한다.
+- 자동 상처는 내성 굴림을 건너뛰지 않는다.
+- 이후 실패 내성, 피해와 피해 할당은 정상 경로를 따른다.
+
+### 피해 할당
+
+- 일반 피해는 모델 사이에 spill되지 않는다.
+- 피해량이 현재 모델의 남은 운드를 초과하면 초과분은 소멸한다.
+- 다음 실패 내성의 피해는 다음 생존 모델에 새로 적용한다.
 
 ---
 
@@ -117,26 +138,28 @@ Saves and Damage
 └─ Models Destroyed
 ```
 
-### 표시 규칙
+표시 규칙:
 
 - Normal Hits와 Critical Hits는 항상 분리한다.
-- Total Hits는 규칙 적용 후 총 명중을 의미한다.
+- Total Hits는 Sustained Hits 적용 후 총 명중을 의미한다.
 - Sustained Hits 단계는 해당 규칙이 활성일 때만 표시한다.
 - Automatic Wounds 단계는 Lethal Hits가 활성일 때만 표시한다.
 - Wound Rolls와 Total Wounds를 구분한다.
+- Automatic Wounds는 내성 전 상처 수다.
 - 각 단계는 평균값과 전체 확률분포를 제공한다.
 - 모든 단계는 기본적으로 접힌 카드로 표시한다.
-- 그룹 제목은 공격, 명중, 상처, 피해 흐름을 반영한다.
 
 ### Applied Rules
 
-결과 상단에 실제 적용 규칙을 표시한다.
+결과 상단에 실제 적용 규칙을 다음 순서로 표시한다.
 
-- Hit 재굴림
-- Critical Hits 임계값
-- Sustained Hits 값
-- Lethal Hits
-- Wound 재굴림
+```text
+Hit re-roll
+Critical Hits threshold
+Sustained Hits
+Lethal Hits
+Wound re-roll
+```
 
 비활성 재굴림은 표시하지 않는다. 기본 Critical Hits 6+는 항상 표시한다.
 
@@ -159,6 +182,9 @@ stageDistributions.hits
 stageDistributions.woundRolls
 stageDistributions.automaticWounds
 stageDistributions.wounds
+stageDistributions.failedSaves
+stageDistributions.effectiveDamage
+stageDistributions.destroyedModels
 ```
 
 ```text
@@ -169,33 +195,56 @@ stageBreakdown.expectedHits
 stageBreakdown.expectedWoundRolls
 stageBreakdown.expectedAutomaticWounds
 stageBreakdown.expectedWounds
+stageBreakdown.expectedFailedSaves
+stageBreakdown.expectedFinalDamage
 ```
 
-`hits`는 Sustained Hits까지 포함한 총 명중이다. `wounds`는 굴림 성공 상처와 자동 상처의 합이다.
+`hits`는 Sustained Hits까지 포함한 총 명중이다. `wounds`는 굴림 성공 상처와 자동 상처의 합이며 내성 굴림 전 상태다.
 
 ---
 
 ## 6. 테스트 지침
 
-### 계산과 스키마
+### 계산기
 
-- 골든 테스트
+- 대표 입력 골든 테스트
 - 공개 분포 정규화
-- Ability 효과 종류와 범위
-- Unit·Weapon 효과 합성
-- 기존 규칙 미적용 결과 회귀 방지
+- 입력 경계와 오류 처리
+- 규칙 미적용 결과 회귀 방지
+- 규칙 적용 시 기대값 단조성
+- 명중·상처 재굴림의 단일 재굴림 보장
+- Sustained/Lethal 동시 적용 경로
+
+### 데이터
+
+- 엔티티 ID 중복 거부
+- 교차 참조 무결성
+- 수치 범위 검증
+- 미지원 필드 거부
+- 모든 Ability 효과 종류와 범위
+- 효과 없는 기존 Ability 호환
+- 실제 `catalog.json` 로딩 회귀
+
+### Ability 합성
+
+- Unit·Weapon 효과 수집 순서
+- 중복 Ability 제거
+- 재굴림 우선순위
+- Critical Hit 임계값 우선순위
+- Lethal Hits 합성
+- Sustained Hits 동일값과 충돌
+- 누락 Ability 오류
 
 ### 상세 결과 표시
 
 `apps/web/src/data/result-view.test.ts`:
 
-- 일반, Critical, 총 명중 단계 항상 표시
+- 기본 단계 순서
 - Sustained Hits 조건부 표시
 - Automatic Wounds 조건부 표시
-- 재굴림과 Critical 임계값 라벨
-- 기본 Critical Hits 6+ 라벨
-- 고정·가변 Sustained Hits 문자열
-- 단계 순서 안정성
+- Applied Rules 문자열
+- 기본 Critical Hits 6+
+- 고정·가변 Sustained Hits 표현
 
 ### 검사 명령
 
@@ -203,11 +252,37 @@ stageBreakdown.expectedWounds
 npm run check
 ```
 
-타입 검사, 모든 테스트와 웹 프로덕션 빌드가 포함된다.
+이 명령에는 모든 워크스페이스 타입 검사, 테스트와 웹 프로덕션 빌드가 포함된다.
 
 ---
 
-## 7. 현재 구현 상태
+## 7. CI와 배포 지침
+
+### 로컬 지원 버전
+
+```text
+Node.js ^20.19.0 또는 >=22.12.0
+```
+
+### GitHub Actions
+
+CI와 Pages 배포는 Node.js 24를 사용한다.
+
+```text
+npm ci
+→ npm run check
+→ Vite build artifact
+→ GitHub Pages deploy
+```
+
+- PR과 `main` push에서 CI를 실행한다.
+- `main` push에서 GitHub Pages 빌드·배포를 실행한다.
+- 배포 대상은 `apps/web/dist`다.
+- lockfile 변경 없이 의존성 선언만 변경하지 않는다.
+
+---
+
+## 8. 현재 구현 상태
 
 ### 계산 엔진
 
@@ -230,7 +305,7 @@ npm run check
 | AbilityEffect | ✅ | 선언형 union |
 | 효과 런타임 검증 | ✅ | 종류·필드·범위 |
 | Unit·Weapon 효과 합성 | ✅ | 별도 순수 함수 |
-| 외부 JSON | ✅ | 샘플 Ability 데이터 |
+| 외부 JSON | ✅ | 단일 샘플 카탈로그 |
 | manifest·IndexedDB | ⬜ | 다음 단계 |
 
 ### UI
@@ -244,37 +319,50 @@ npm run check
 | 확률분포 접기 카드 | ✅ | 단계별 전체 분포 |
 | 전체 최종 상태 분포 UI | ⬜ | 후속 단계 |
 
+### 운영
+
+| 항목 | 상태 | 현재 내용 |
+|---|---:|---|
+| CI | ✅ | PR·main, Node.js 24 |
+| 배포 | ✅ | GitHub Pages |
+| 공식 전체 데이터 | ⬜ | 권리·수집 방식 검토 필요 |
+| 로컬 데이터 캐시 | ⬜ | IndexedDB 예정 |
+
 ---
 
-## 8. 다음 개발 우선순위
+## 9. 다음 개발 우선순위
 
 1. 데이터 릴리스 manifest 계약
 2. 공통 데이터와 진영별 청크 분리
 3. 파일 해시와 무결성 검증
 4. IndexedDB 캐시 저장
-5. 새 버전 감지와 교체
-6. 갱신 실패 시 기존 정상 버전 복구
+5. 새 버전의 원자적 교체
+6. 갱신 실패 시 마지막 정상 버전 복구
+7. 과거 버전 선택 구조
 
 ---
 
-## 9. 기능 추가 체크리스트
+## 10. 기능 추가 체크리스트
 
 - [ ] 규칙 적용 시점을 정의했다.
 - [ ] 계산 상태와 표시 상태를 분리했다.
+- [ ] 데이터 형식과 런타임 검증을 추가했다.
+- [ ] 효과 충돌 정책을 정의했다.
 - [ ] 조건부 UI 표시 정책을 순수 함수로 테스트했다.
 - [ ] 정상·경계·오류 테스트를 추가했다.
 - [ ] 기존 미적용 입력의 호환성을 검증했다.
 - [ ] 모든 공개 분포 정규화를 검증했다.
-- [ ] 관련 문서를 갱신했다.
+- [ ] 관련 문서를 실제 구현 상태로 갱신했다.
 - [ ] `npm ci` 이후 `npm run check`를 통과했다.
 
 ---
 
-## 10. 문서 갱신 규칙
+## 11. 문서 갱신 규칙
 
-- 구현 상태: `development-guide.md`, `roadmap.md`
+- 구현 상태와 다음 순서: `roadmap.md`
+- 개발 원칙과 테스트 기준: `development-guide.md`
 - 구조와 기술 결정: `technical-design.md`
-- 제품 범위: `proposal.md`
-- 실행 방법: `README.md`
+- 제품 목적과 범위: `proposal.md`
+- 실행·사용·배포 방법: `README.md`
 
 계획만 존재하는 기능을 완료로 표시하지 않는다.
