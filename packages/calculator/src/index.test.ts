@@ -3,6 +3,7 @@ import {
   allocateFixedDamage,
   attackCountToPmf,
   calculateBattle,
+  repeatAttackCount,
   woundTarget,
 } from "./index";
 
@@ -50,6 +51,33 @@ describe("attackCountToPmf", () => {
     expect(() =>
       attackCountToPmf({ kind: "dice", count: 3, sides: 100 }),
     ).toThrow("attacks must produce an integer between 0 and 200.");
+  });
+});
+
+describe("repeatAttackCount", () => {
+  it("multiplies fixed numeric attacks by the number of attacking models", () => {
+    expect(repeatAttackCount(2, 5)).toBe(10);
+    expect(repeatAttackCount({ kind: "fixed", value: 2 }, 5)).toEqual({
+      kind: "fixed",
+      value: 10,
+    });
+  });
+
+  it("combines one independent D6 attack expression per model", () => {
+    const repeated = repeatAttackCount({ kind: "dice", count: 1, sides: 6 }, 5);
+
+    expect(repeated).toEqual({ kind: "dice", count: 5, sides: 6 });
+    expect(attackCountToPmf(repeated).expectation((value) => value)).toBeCloseTo(17.5, 12);
+  });
+
+  it("repeats both dice and modifiers", () => {
+    expect(
+      repeatAttackCount({ kind: "dice", count: 2, sides: 6, modifier: 1 }, 3),
+    ).toEqual({ kind: "dice", count: 6, sides: 6, modifier: 3 });
+  });
+
+  it("returns zero attacks for zero repetitions", () => {
+    expect(repeatAttackCount({ kind: "dice", count: 1, sides: 6 }, 0)).toBe(0);
   });
 });
 
