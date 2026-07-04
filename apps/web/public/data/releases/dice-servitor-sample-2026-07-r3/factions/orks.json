@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "dice-servitor-sample-2026-07-r3",
+  "kind": "faction",
+  "factionId": "orks",
+  "modelProfiles": [
+    {
+      "id": "boy-model",
+      "name": "Ork Boy",
+      "ballisticSkill": 5,
+      "weaponSkill": 3,
+      "toughness": 5,
+      "save": 5,
+      "wounds": 1
+    }
+  ],
+  "weaponProfiles": [
+    {
+      "id": "choppa",
+      "name": "Choppa",
+      "type": "melee",
+      "attacks": 3,
+      "strength": 4,
+      "armorPenetration": -1,
+      "damage": 1,
+      "abilityIds": []
+    }
+  ],
+  "units": [
+    {
+      "id": "boyz",
+      "factionId": "orks",
+      "name": "Boyz",
+      "modelProfileId": "boy-model",
+      "defaultModelCount": 10,
+      "minModelCount": 10,
+      "maxModelCount": 20,
+      "weaponProfileIds": [
+        "choppa"
+      ],
+      "abilityIds": []
+    }
+  ]
+}
