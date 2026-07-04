@@ -11,9 +11,11 @@ The package owns:
 - rejection of unsupported fields
 - release index and manifest types
 - relative JSON path, SHA-256 and byte-size validation
-- release index and manifest consistency checks
+- common and faction chunk payload types
+- chunk ownership and release consistency checks
+- validated chunk-to-catalog assembly
 
-The current catalog loader passes external JSON through `parseGameDataCatalog` before exposing resolved units and weapons to the UI.
+The legacy catalog loader passes external JSON through `parseGameDataCatalog` before exposing resolved units and weapons to the UI.
 
 The release layer exposes:
 
@@ -23,4 +25,14 @@ parseReleaseManifest(input)
 assertReleaseManifestMatchesIndex(releaseIndex, releaseManifest)
 ```
 
-The sample static release is published under `apps/web/public/data/`. Its manifest contains one common chunk and one chunk per faction. Web regression tests verify that every descriptor matches the deployed file path, byte size and SHA-256 digest.
+The chunk layer exposes:
+
+```ts
+parseCommonDataChunk(input)
+parseFactionDataChunk(input)
+assembleGameDataCatalog(commonChunk, factionChunks)
+```
+
+Faction chunks may reference weapons and Abilities from the common chunk. Model profiles must remain local to their faction chunk. The assembler orders loaded faction chunks by the common faction list, rejects release and ownership mismatches, and runs the final merged data through `parseGameDataCatalog` so all duplicate IDs and cross-entity references are revalidated.
+
+The sample static release is published under `apps/web/public/data/`. Its manifest contains one common chunk and one chunk per faction. Regression tests verify file paths, byte sizes, SHA-256 digests, and semantic equality between the fully assembled chunk catalog and the legacy `catalog.json`.

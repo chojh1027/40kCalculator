@@ -1,5 +1,10 @@
 export { parseGameDataCatalog } from "./validation";
 export {
+  assembleGameDataCatalog,
+  parseCommonDataChunk,
+  parseFactionDataChunk,
+} from "./chunk-validation";
+export {
   assertReleaseManifestMatchesIndex,
   parseReleaseIndex,
   parseReleaseManifest,
@@ -8,6 +13,10 @@ export type {
   AbilityEffect,
   RerollPolicyKind,
 } from "./ability-effects";
+export type {
+  CommonDataChunk,
+  FactionDataChunk,
+} from "./chunk-types";
 export type {
   CommonDataChunkDescriptor,
   DataChunkDescriptor,
