@@ -1,6 +1,6 @@
 # Dice Servitor 개발 로드맵
 
-- 문서 상태: v0.16
+- 문서 상태: v0.17
 - 기준일: 2026-07-04
 - 대상 저장소: `chojh1027/40kCalculator`
 - 관련 문서: [프로젝트 프로포절](./proposal.md), [기술 설계서](./technical-design.md), [개발 지침 및 진행 현황](./development-guide.md), [데이터 릴리스 계약](./data-release-contract.md)
@@ -32,6 +32,9 @@
 - 규칙별 상세 결과와 확률분포 UI
 - 정규화된 외부 JSON 카탈로그와 런타임 검증
 - 릴리스 인덱스와 manifest 타입·런타임 검증
+- 공통·진영 청크 payload 타입과 런타임 검증
+- 선택된 진영 청크를 `GameDataCatalog`로 합성하는 assembler
+- 전체 샘플 청크와 기존 단일 카탈로그의 동등성 회귀 테스트
 - 공통 청크 1개와 진영별 샘플 청크 4개
 - 정적 릴리스 파일 경로·크기·SHA-256 회귀 검사
 - 루트 lockfile과 `npm ci` 기반 CI
@@ -54,7 +57,6 @@
 
 - Critical Wound와 별도 Mortal Wounds 피해 경로가 없다.
 - 단일 공격 그룹만 지원한다.
-- 공통·진영 청크 payload의 런타임 검증과 catalog assembler가 없다.
 - 브라우저 네트워크 로더와 Web Crypto 해시 검증이 없다.
 - IndexedDB, 원자적 활성 버전 교체와 복구 경로가 없다.
 - 검색, 프리셋, URL 공유와 다국어가 없다.
@@ -145,22 +147,26 @@
 
 ### 12-B. 청크 payload 계약과 catalog assembler
 
-상태: ⬜ 미구현 — **다음 직접 개발 작업**
+상태: ✅ 완료
 
-- [ ] `CommonDataChunk` 타입
-- [ ] `FactionDataChunk` 타입
-- [ ] 공통 청크 런타임 검증
-- [ ] 진영 청크 런타임 검증
-- [ ] 청크 내부 중복 ID 검사
-- [ ] 공통·진영 간 중복 ID 정책
-- [ ] 공통 엔티티 참조 규칙
-- [ ] 진영 엔티티 참조 규칙
-- [ ] 검증된 청크를 기존 `GameDataCatalog`로 합성
-- [ ] 기존 단일 `catalog.json`과 결과가 같은지 회귀 테스트
+- [x] `CommonDataChunk` 타입
+- [x] `FactionDataChunk` 타입
+- [x] 공통 청크 런타임 검증
+- [x] 진영 청크 런타임 검증
+- [x] 청크 내부 중복 ID 검사
+- [x] 공통·진영 간 중복 ID 검사
+- [x] 공통 엔티티 참조 규칙
+- [x] 진영 엔티티 참조 규칙
+- [x] 진영 청크의 공통 WeaponProfile·Ability 참조 허용
+- [x] Unit의 ModelProfile을 동일 진영 청크로 제한
+- [x] 검증된 청크를 기존 `GameDataCatalog`로 합성
+- [x] 공통 Faction 순서에 따른 결정적 청크 합성
+- [x] 선택된 일부 진영만 합성하는 경로
+- [x] 기존 단일 `catalog.json`과 의미적 동등성 회귀 테스트
 
 ### 12-C. 네트워크 로더와 브라우저 무결성 검사
 
-상태: ⬜ 미구현
+상태: ⬜ 미구현 — **다음 직접 개발 작업**
 
 - [ ] `versions.json` 조회
 - [ ] 선택 릴리스 manifest 조회
@@ -168,7 +174,9 @@
 - [ ] HTTP 실패와 JSON 파싱 오류 처리
 - [ ] Web Crypto SHA-256 검증
 - [ ] manifest의 `sizeBytes` 검증
+- [ ] descriptor와 청크의 releaseId·kind·factionId 일치 검사
 - [ ] 검증 완료 전 데이터 비활성 상태 유지
+- [ ] 네트워크 계층과 catalog assembler 연결
 
 ### 12-D. IndexedDB와 원자적 버전 교체
 
@@ -265,7 +273,7 @@ release
 |---:|---|---:|
 | 0~11 | 계산 엔진·데이터 스키마·Ability·상세 결과 UI | ✅ |
 | 12-A | 릴리스 index·manifest 계약과 정적 샘플 | ✅ |
-| 12-B | 청크 payload 검증과 catalog assembler | ⬜ |
+| 12-B | 청크 payload 검증과 catalog assembler | ✅ |
 | 12-C | 네트워크 로더와 브라우저 해시 검증 | ⬜ |
 | 12-D | IndexedDB와 원자적 버전 교체 | ⬜ |
 | 13 | 데이터 CLI와 다국어 | ⬜ |
@@ -276,7 +284,7 @@ release
 - 정적 데이터 파일의 캐시 갱신 동작
 - 시험 결과에 따른 호스팅 유지·전환 결정
 
-다음 개발 작업은 **공통·진영 청크 payload 계약과 기존 `GameDataCatalog`를 생성하는 assembler를 구현하는 것**이다.
+다음 개발 작업은 **`versions.json`·manifest·필요 청크를 읽고 Web Crypto로 무결성을 검증하는 네트워크 릴리스 로더를 구현하는 것**이다.
 
 ---
 
