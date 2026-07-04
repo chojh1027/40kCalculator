@@ -20,8 +20,12 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install locked dependencies
         run: npm ci
-      - name: Typecheck workspaces
-        run: npm run typecheck
+      - name: Typecheck calculator
+        run: npm --workspace @40k-calculator/calculator run typecheck
+      - name: Typecheck game data schema
+        run: npm --workspace @40k-calculator/game-data-schema run typecheck
+      - name: Typecheck web application
+        run: npm --workspace @40k-calculator/web run typecheck
       - name: Test workspaces
         run: npm run test
       - name: Verify data release
