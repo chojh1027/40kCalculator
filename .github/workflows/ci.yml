@@ -20,5 +20,11 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install locked dependencies
         run: npm ci
-      - name: Run project checks
-        run: npm run check
+      - name: Typecheck workspaces
+        run: npm run typecheck
+      - name: Test workspaces
+        run: npm run test
+      - name: Verify data release
+        run: npm run verify:data-release
+      - name: Build web application
+        run: npm run build
