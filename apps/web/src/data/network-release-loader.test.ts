@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  bytesToArrayBuffer,
   loadGameDataRelease,
   ReleaseLoadError,
   sha256Hex,
@@ -229,7 +230,7 @@ async function createFixture(): Promise<Fixture> {
     if (bytes === undefined) {
       return new Response("Not Found", { status: 404 });
     }
-    return new Response(bytes, {
+    return new Response(bytesToArrayBuffer(bytes), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
