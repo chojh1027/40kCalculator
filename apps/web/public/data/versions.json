@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "gameSystem": "warhammer-40000",
+  "latestReleaseId": "dice-servitor-sample-2026-07-r3",
+  "releases": [
+    {
+      "id": "dice-servitor-sample-2026-07-r3",
+      "effectiveDate": "2026-07-03",
+      "manifestPath": "releases/dice-servitor-sample-2026-07-r3/manifest.json"
+    }
+  ]
+}
