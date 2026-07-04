@@ -22,8 +22,12 @@ jobs:
         run: npm ci
       - name: Typecheck workspaces
         run: npm run typecheck
-      - name: Test workspaces
-        run: npm run test
+      - name: Test calculator
+        run: npm --workspace @40k-calculator/calculator run test
+      - name: Test game data schema
+        run: npm --workspace @40k-calculator/game-data-schema run test
+      - name: Test web application
+        run: npm --workspace @40k-calculator/web run test
       - name: Verify data release
         run: npm run verify:data-release
       - name: Build web application
