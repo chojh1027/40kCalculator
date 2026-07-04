@@ -1,6 +1,6 @@
 # Dice Servitor 개발 로드맵
 
-- 문서 상태: v0.17
+- 문서 상태: v0.18
 - 기준일: 2026-07-04
 - 대상 저장소: `chojh1027/40kCalculator`
 - 관련 문서: [프로젝트 프로포절](./proposal.md), [기술 설계서](./technical-design.md), [개발 지침 및 진행 현황](./development-guide.md), [데이터 릴리스 계약](./data-release-contract.md)
@@ -35,6 +35,11 @@
 - 공통·진영 청크 payload 타입과 런타임 검증
 - 선택된 진영 청크를 `GameDataCatalog`로 합성하는 assembler
 - 전체 샘플 청크와 기존 단일 카탈로그의 동등성 회귀 테스트
+- `versions.json`·manifest·청크 네트워크 로더
+- 선택 진영 청크만 다운로드하는 경로
+- Web Crypto SHA-256과 `sizeBytes` 검증
+- descriptor와 payload 일치 검사
+- 구조화된 네트워크·무결성 오류 분류
 - 공통 청크 1개와 진영별 샘플 청크 4개
 - 정적 릴리스 파일 경로·크기·SHA-256 회귀 검사
 - 루트 lockfile과 `npm ci` 기반 CI
@@ -57,8 +62,8 @@
 
 - Critical Wound와 별도 Mortal Wounds 피해 경로가 없다.
 - 단일 공격 그룹만 지원한다.
-- 브라우저 네트워크 로더와 Web Crypto 해시 검증이 없다.
 - IndexedDB, 원자적 활성 버전 교체와 복구 경로가 없다.
+- 현재 화면은 아직 기존 번들 `catalog.json`을 사용한다.
 - 검색, 프리셋, URL 공유와 다국어가 없다.
 - 최종 운영 호스팅 환경이 확정되지 않았다.
 
@@ -166,29 +171,41 @@
 
 ### 12-C. 네트워크 로더와 브라우저 무결성 검사
 
-상태: ⬜ 미구현 — **다음 직접 개발 작업**
+상태: ✅ 완료
 
-- [ ] `versions.json` 조회
-- [ ] 선택 릴리스 manifest 조회
-- [ ] 필요한 공통·진영 청크만 다운로드
-- [ ] HTTP 실패와 JSON 파싱 오류 처리
-- [ ] Web Crypto SHA-256 검증
-- [ ] manifest의 `sizeBytes` 검증
-- [ ] descriptor와 청크의 releaseId·kind·factionId 일치 검사
-- [ ] 검증 완료 전 데이터 비활성 상태 유지
-- [ ] 네트워크 계층과 catalog assembler 연결
+- [x] `versions.json` 조회
+- [x] 최신 또는 지정 릴리스 선택
+- [x] 선택 릴리스 manifest 조회
+- [x] 필요한 공통·진영 청크만 다운로드
+- [x] HTTP 실패와 JSON 파싱 오류 처리
+- [x] Web Crypto SHA-256 검증
+- [x] manifest의 `sizeBytes` 검증
+- [x] descriptor와 청크의 `releaseId`, `kind`, `factionId` 일치 검사
+- [x] 빈·중복·미존재 진영 선택 거부
+- [x] 검증 완료 전 catalog 비활성 상태 유지
+- [x] 네트워크 계층과 catalog assembler 연결
+- [x] GitHub Pages 하위 경로용 `document.baseURI` 기반 데이터 URL
+- [x] 환경·네트워크·HTTP·JSON·스키마·무결성·합성 오류 분류
+
+현재 UI는 아직 번들 `catalog.json`을 사용한다. 네트워크 로더는 IndexedDB 설치와 활성 릴리스 전환 계층에서 사용한다.
 
 ### 12-D. IndexedDB와 원자적 버전 교체
 
-상태: ⬜ 미구현
+상태: ⬜ 미구현 — **다음 직접 개발 작업**
 
-- [ ] 릴리스·manifest·청크·설정 object store
-- [ ] 임시 릴리스 설치
-- [ ] 전체 성공 후 활성 릴리스 포인터 교체
+- [ ] IndexedDB 데이터베이스 이름과 schema version
+- [ ] 릴리스 index 저장소
+- [ ] manifest 저장소
+- [ ] 청크 바이트·검증 metadata 저장소
+- [ ] 설정과 활성 릴리스 포인터 저장소
+- [ ] 임시 릴리스 설치 상태
+- [ ] 전체 검증 성공 후 활성 릴리스 포인터 교체
 - [ ] 설치 실패 시 기존 활성 버전 유지
 - [ ] 마지막 정상 버전 복구
 - [ ] 복수 릴리스 보관
 - [ ] 과거 버전 선택 기반
+- [ ] 네트워크 로더 결과를 저장 계층에 연결
+- [ ] 활성 릴리스 catalog 조회 API
 
 설계 기준:
 
@@ -196,6 +213,7 @@
 - 네트워크 데이터는 런타임 스키마 검증을 통과해야 한다.
 - 파일 해시와 크기를 확인한 뒤에만 데이터를 신뢰한다.
 - 일부 파일 다운로드 실패가 활성 데이터에 영향을 주지 않아야 한다.
+- 활성 릴리스 포인터는 모든 저장 작업이 성공한 뒤에만 바꾼다.
 - 특정 호스팅 사업자에 종속되지 않는 정적 파일 구조를 유지한다.
 
 ---
@@ -274,7 +292,7 @@ release
 | 0~11 | 계산 엔진·데이터 스키마·Ability·상세 결과 UI | ✅ |
 | 12-A | 릴리스 index·manifest 계약과 정적 샘플 | ✅ |
 | 12-B | 청크 payload 검증과 catalog assembler | ✅ |
-| 12-C | 네트워크 로더와 브라우저 해시 검증 | ⬜ |
+| 12-C | 네트워크 로더와 브라우저 해시 검증 | ✅ |
 | 12-D | IndexedDB와 원자적 버전 교체 | ⬜ |
 | 13 | 데이터 CLI와 다국어 | ⬜ |
 
@@ -284,7 +302,7 @@ release
 - 정적 데이터 파일의 캐시 갱신 동작
 - 시험 결과에 따른 호스팅 유지·전환 결정
 
-다음 개발 작업은 **`versions.json`·manifest·필요 청크를 읽고 Web Crypto로 무결성을 검증하는 네트워크 릴리스 로더를 구현하는 것**이다.
+다음 개발 작업은 **IndexedDB 저장 계약, 임시 릴리스 설치와 활성 릴리스 포인터를 구현하는 것**이다.
 
 ---
 

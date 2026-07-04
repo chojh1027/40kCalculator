@@ -1,9 +1,9 @@
 # Dice Servitor 개발 지침 및 진행 현황
 
-- 문서 상태: v0.16
+- 문서 상태: v0.17
 - 기준일: 2026-07-04
 - 대상 저장소: `chojh1027/40kCalculator`
-- 관련 문서: [프로젝트 프로포절](./proposal.md), [기술 설계서](./technical-design.md), [개발 로드맵](./roadmap.md)
+- 관련 문서: [프로젝트 프로포절](./proposal.md), [기술 설계서](./technical-design.md), [개발 로드맵](./roadmap.md), [데이터 릴리스 계약](./data-release-contract.md)
 
 이 문서는 개발 원칙, 모듈 책임, 테스트 기준과 실제 구현 상태를 관리한다. 작업 순서와 완료 여부는 `roadmap.md`를 단일 기준으로 사용한다.
 
@@ -22,8 +22,9 @@
 ### 모듈 책임
 
 - `packages/calculator`: 순수 전투 확률 계산
-- `packages/game-data-schema`: 데이터 타입과 런타임 검증
-- `apps/web/src/data/catalog.ts`: 검증된 카탈로그 접근
+- `packages/game-data-schema`: 카탈로그·릴리스·청크 타입과 런타임 검증
+- `apps/web/src/data/catalog.ts`: 현재 번들 카탈로그 접근
+- `apps/web/src/data/network-release-loader.ts`: 정적 릴리스 다운로드·무결성 검증·catalog 합성
 - `apps/web/src/data/ability-rules.ts`: Ability 규칙 해석
 - `apps/web/src/data/result-view.ts`: 계산 결과의 UI 표시 정책
 - `apps/web/src/DetailedResults.tsx`: 상세 결과 렌더링
@@ -36,6 +37,7 @@
 - 계산 결과 표시 순서와 조건은 React 컴포넌트 밖의 순수 함수에서 결정한다.
 - 계산 엔진의 결과를 UI 편의를 위해 다시 계산하지 않는다.
 - 현재 샘플 카탈로그와 향후 공식·커뮤니티 데이터 배포를 명확히 구분한다.
+- 네트워크에서 받은 데이터는 무결성·스키마·교차 참조 검증 전까지 활성 데이터로 사용하지 않는다.
 
 ### 배포 독립성
 
@@ -44,6 +46,7 @@
 - 시험 환경과 확정 운영 환경을 문서에서 구분한다.
 - 호스팅 변경이 계산 엔진, 데이터 스키마와 UI 구조에 영향을 주지 않도록 한다.
 - 호스팅 사업자 전용 API를 핵심 기능의 필수 경로로 사용하지 않는다.
+- 정적 데이터 URL은 `document.baseURI`를 기준으로 계산해 하위 경로 배포를 지원한다.
 
 ### 문서 정확성
 
@@ -226,7 +229,7 @@ stageBreakdown.expectedFinalDamage
 - Sustained/Lethal 동시 적용 경로
 - non-spill 피해 할당
 
-### 데이터
+### 데이터와 릴리스
 
 - 엔티티 ID 중복 거부
 - 교차 참조 무결성
@@ -235,6 +238,16 @@ stageBreakdown.expectedFinalDamage
 - 모든 Ability 효과 종류와 범위
 - 효과 없는 기존 Ability 호환
 - 실제 `catalog.json` 로딩 회귀
+- release index와 manifest 계약 검증
+- 실제 정적 청크의 파일 크기와 SHA-256 검증
+- 공통·진영 청크 payload 검증
+- 전체 청크 합성과 기존 카탈로그 동등성
+- 최신·지정 릴리스 선택
+- 선택 진영만 다운로드
+- HTTP·JSON·스키마 오류 분류
+- `sizeBytes`와 SHA-256 불일치 거부
+- descriptor와 payload 불일치 거부
+- 최종 catalog 합성 실패 시 결과 미반환
 
 ### Ability 합성
 
@@ -263,7 +276,7 @@ stageBreakdown.expectedFinalDamage
 npm run check
 ```
 
-이 명령에는 모든 워크스페이스 타입 검사, 테스트와 웹 프로덕션 빌드가 포함된다.
+이 명령에는 모든 워크스페이스 타입 검사, 테스트, 정적 릴리스 무결성 검사와 웹 프로덕션 빌드가 포함된다.
 
 ---
 
@@ -300,6 +313,7 @@ main push 또는 workflow_dispatch
 
 - 배포 대상은 `apps/web/dist`다.
 - Vite는 상대 경로 배포를 위해 `base: "./"`를 사용한다.
+- 네트워크 데이터 기본 경로는 현재 문서의 `data/` 하위 경로다.
 - GitHub Pages는 현재 시험 환경이다.
 - 시험 후 유지 또는 다른 정적 호스팅으로 전환한다.
 - 플랫폼 전환 시에도 동일한 빌드와 검사 명령을 유지한다.
@@ -310,6 +324,7 @@ main push 또는 workflow_dispatch
 - 첫 접근과 직접 URL 접근
 - 새로고침과 상대 경로
 - 모바일 화면과 입력 동작
+- 정적 데이터 경로와 청크 다운로드
 - 캐시 갱신
 - 배포 실패 시 복구
 - 성능과 운영 편의성
@@ -340,7 +355,11 @@ main push 또는 workflow_dispatch
 | 효과 런타임 검증 | ✅ | 종류·필드·범위 |
 | Unit·Weapon 효과 합성 | ✅ | 별도 순수 함수 |
 | 외부 JSON | ✅ | 단일 샘플 카탈로그 |
-| manifest·IndexedDB | ⬜ | 다음 단계 |
+| 릴리스 index·manifest | ✅ | 정적 파일 계약과 검증 |
+| 청크 payload·assembler | ✅ | 공통·진영 검증과 선택 합성 |
+| 네트워크 로더 | ✅ | Fetch, Web Crypto, 오류 분류 |
+| IndexedDB 저장 | ⬜ | 다음 단계 |
+| 활성 릴리스 전환 | ⬜ | 원자적 포인터 교체 예정 |
 
 ### UI
 
@@ -351,6 +370,7 @@ main push 또는 workflow_dispatch
 | 상세 명중 결과 | ✅ | 일반·Critical·Sustained·총 명중 |
 | 상세 상처 결과 | ✅ | 굴림 수·자동 상처·총 상처 |
 | 확률분포 접기 카드 | ✅ | 단계별 전체 분포 |
+| 활성 릴리스 catalog 사용 | ⬜ | 현재 번들 `catalog.json` 사용 |
 | 전체 최종 상태 분포 UI | ⬜ | 후속 단계 |
 
 ### 운영
@@ -367,17 +387,18 @@ main push 또는 workflow_dispatch
 
 ## 9. 다음 개발 우선순위
 
-1. 데이터 릴리스 manifest 계약
-2. 공통 데이터와 진영별 청크 분리
-3. 파일 해시와 무결성 검증
-4. IndexedDB 캐시 저장
-5. 새 버전의 원자적 교체
-6. 갱신 실패 시 마지막 정상 버전 복구
-7. 과거 버전 선택 구조
+1. IndexedDB 데이터베이스와 object store 계약
+2. 검증된 릴리스의 임시 설치
+3. 전체 저장 성공 후 활성 릴리스 포인터 교체
+4. 설치 실패 시 기존 활성 버전 유지
+5. 마지막 정상 버전 복구
+6. 복수 릴리스 보관과 과거 버전 선택
+7. UI를 활성 릴리스 catalog 조회 경로로 전환
 
 병행 검증:
 
 - GitHub Pages 시험 배포 테스트
+- 정적 데이터 파일과 청크의 캐시 갱신 동작
 - 시험 결과에 따른 호스팅 유지·전환 결정
 
 ---
@@ -401,6 +422,7 @@ main push 또는 workflow_dispatch
 ## 11. 문서 갱신 규칙
 
 - 구현 상태와 다음 순서: `roadmap.md`
+- 릴리스 파일 계약: `data-release-contract.md`
 - 개발 원칙과 테스트 기준: `development-guide.md`
 - 구조와 기술 결정: `technical-design.md`
 - 제품 목적과 범위: `proposal.md`
