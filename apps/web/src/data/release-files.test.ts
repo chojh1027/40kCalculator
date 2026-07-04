@@ -1,16 +1,11 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   assertReleaseManifestMatchesIndex,
   parseReleaseIndex,
   parseReleaseManifest,
 } from "@40k-calculator/game-data-schema";
 import { describe, expect, it } from "vitest";
-import versionsJson from "../../public/data/versions.json";
-import commonJson from "../../public/data/releases/dice-servitor-sample-2026-07-r3/common.json";
-import astraMilitarumJson from "../../public/data/releases/dice-servitor-sample-2026-07-r3/factions/astra-militarum.json";
-import chaosSpaceMarinesJson from "../../public/data/releases/dice-servitor-sample-2026-07-r3/factions/chaos-space-marines.json";
-import orksJson from "../../public/data/releases/dice-servitor-sample-2026-07-r3/factions/orks.json";
-import spaceMarinesJson from "../../public/data/releases/dice-servitor-sample-2026-07-r3/factions/space-marines.json";
-import manifestJson from "../../public/data/releases/dice-servitor-sample-2026-07-r3/manifest.json";
 
 interface SampleChunkFile {
   readonly schemaVersion: number;
@@ -19,40 +14,56 @@ interface SampleChunkFile {
   readonly factionId?: string;
 }
 
-const SAMPLE_CHUNK_FILES: Readonly<Record<string, SampleChunkFile>> = {
-  "common.json": commonJson,
-  "factions/astra-militarum.json": astraMilitarumJson,
-  "factions/chaos-space-marines.json": chaosSpaceMarinesJson,
-  "factions/orks.json": orksJson,
-  "factions/space-marines.json": spaceMarinesJson,
-};
+const DATA_ROOT = new URL("../../public/data/", import.meta.url);
+
+function readJson(url: URL): unknown {
+  return JSON.parse(readFileSync(url, "utf8")) as unknown;
+}
+
+function readReleaseFiles() {
+  const releaseIndex = parseReleaseIndex(readJson(new URL("versions.json", DATA_ROOT)));
+  const releaseEntry = releaseIndex.releases.find(
+    (release) => release.id === releaseIndex.latestReleaseId,
+  );
+  if (releaseEntry === undefined) throw new Error("Latest sample release is missing");
+
+  const manifestUrl = new URL(releaseEntry.manifestPath, DATA_ROOT);
+  const manifest = parseReleaseManifest(readJson(manifestUrl));
+  const releaseRoot = new URL("./", manifestUrl);
+  return { releaseIndex, releaseEntry, manifest, releaseRoot };
+}
 
 describe("sample release files", () => {
   it("uses valid release index and manifest contracts", () => {
-    const releaseIndex = parseReleaseIndex(versionsJson);
-    const manifest = parseReleaseManifest(manifestJson);
+    const { releaseIndex, releaseEntry, manifest } = readReleaseFiles();
 
     expect(() => assertReleaseManifestMatchesIndex(releaseIndex, manifest)).not.toThrow();
     expect(releaseIndex.latestReleaseId).toBe(manifest.releaseId);
-    expect(releaseIndex.releases[0]?.manifestPath).toBe(
+    expect(releaseEntry.manifestPath).toBe(
       "releases/dice-servitor-sample-2026-07-r3/manifest.json",
     );
   });
 
-  it("has one deployed file for every manifest chunk", () => {
-    const manifest = parseReleaseManifest(manifestJson);
+  it("matches every manifest descriptor to its deployed chunk bytes", () => {
+    const { manifest, releaseRoot } = readReleaseFiles();
 
-    expect(manifest.chunks).toHaveLength(Object.keys(SAMPLE_CHUNK_FILES).length);
+    expect(manifest.chunks).toHaveLength(5);
     for (const descriptor of manifest.chunks) {
-      const file = SAMPLE_CHUNK_FILES[descriptor.path];
-      expect(file, descriptor.path).toBeDefined();
-      expect(file?.schemaVersion).toBe(1);
-      expect(file?.releaseId).toBe(manifest.releaseId);
-      expect(file?.kind).toBe(descriptor.kind);
+      const chunkBytes = readFileSync(new URL(descriptor.path, releaseRoot));
+      const chunk = JSON.parse(chunkBytes.toString("utf8")) as SampleChunkFile;
+
+      expect(chunk.schemaVersion, descriptor.path).toBe(1);
+      expect(chunk.releaseId, descriptor.path).toBe(manifest.releaseId);
+      expect(chunk.kind, descriptor.path).toBe(descriptor.kind);
+      expect(chunkBytes.byteLength, descriptor.path).toBe(descriptor.sizeBytes);
+      expect(createHash("sha256").update(chunkBytes).digest("hex"), descriptor.path).toBe(
+        descriptor.sha256,
+      );
+
       if (descriptor.kind === "faction") {
-        expect(file?.factionId).toBe(descriptor.factionId);
+        expect(chunk.factionId, descriptor.path).toBe(descriptor.factionId);
       } else {
-        expect(file?.factionId).toBeUndefined();
+        expect(chunk.factionId, descriptor.path).toBeUndefined();
       }
     }
   });
