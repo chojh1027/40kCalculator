@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "dice-servitor-sample-2026-07-r3",
+  "kind": "common",
+  "metadata": {
+    "schemaVersion": 1,
+    "gameSystem": "warhammer-40000",
+    "edition": "10th Edition",
+    "releaseId": "dice-servitor-sample-2026-07-r3",
+    "effectiveDate": "2026-07-03",
+    "lastModified": "2026-07-03",
+    "source": {
+      "label": "Dice Servitor self-authored sample catalog",
+      "kind": "sample"
+    }
+  },
+  "alliances": [
+    {
+      "id": "imperium",
+      "name": "Imperium"
+    },
+    {
+      "id": "chaos",
+      "name": "Chaos"
+    },
+    {
+      "id": "xenos",
+      "name": "Xenos"
+    }
+  ],
+  "factions": [
+    {
+      "id": "space-marines",
+      "allianceId": "imperium",
+      "name": "Space Marines"
+    },
+    {
+      "id": "astra-militarum",
+      "allianceId": "imperium",
+      "name": "Astra Militarum"
+    },
+    {
+      "id": "chaos-space-marines",
+      "allianceId": "chaos",
+      "name": "Chaos Space Marines"
+    },
+    {
+      "id": "orks",
+      "allianceId": "xenos",
+      "name": "Orks"
+    }
+  ],
+  "abilities": [
+    {
+      "id": "test-sustained-hits-one",
+      "name": "Sustained Hits 1",
+      "description": "Temporary calculation test ability.",
+      "effects": [
+        {
+          "kind": "sustained-hits",
+          "extraHits": 1
+        }
+      ]
+    },
+    {
+      "id": "test-lethal-hits",
+      "name": "Lethal Hits",
+      "description": "Temporary calculation test ability.",
+      "effects": [
+        {
+          "kind": "lethal-hits"
+        }
+      ]
+    }
+  ],
+  "weaponProfiles": [
+    {
+      "id": "lascannon",
+      "name": "Lascannon (MVP fixed damage)",
+      "type": "ranged",
+      "attacks": 1,
+      "strength": 12,
+      "armorPenetration": -3,
+      "damage": 4,
+      "abilityIds": []
+    },
+    {
+      "id": "chainsword",
+      "name": "Chainsword",
+      "type": "melee",
+      "attacks": 4,
+      "strength": 4,
+      "armorPenetration": -1,
+      "damage": 1,
+      "abilityIds": []
+    }
+  ]
+}
