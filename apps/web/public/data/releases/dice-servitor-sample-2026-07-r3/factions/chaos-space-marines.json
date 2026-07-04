@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "dice-servitor-sample-2026-07-r3",
+  "kind": "faction",
+  "factionId": "chaos-space-marines",
+  "modelProfiles": [
+    {
+      "id": "legionary-model",
+      "name": "Legionary",
+      "ballisticSkill": 3,
+      "weaponSkill": 3,
+      "toughness": 4,
+      "save": 3,
+      "wounds": 2
+    }
+  ],
+  "weaponProfiles": [],
+  "units": [
+    {
+      "id": "legionaries",
+      "factionId": "chaos-space-marines",
+      "name": "Legionaries",
+      "modelProfileId": "legionary-model",
+      "defaultModelCount": 5,
+      "minModelCount": 5,
+      "maxModelCount": 10,
+      "weaponProfileIds": [
+        "chainsword"
+      ],
+      "abilityIds": []
+    }
+  ]
+}
