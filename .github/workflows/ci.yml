@@ -25,19 +25,19 @@ jobs:
       - name: Test calculator
         run: npm --workspace @40k-calculator/calculator run test
       - name: Test catalog validation
-        run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/validation.test.ts
+        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/validation.test.ts
       - name: Test release validation
-        run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/release-validation.test.ts
+        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/release-validation.test.ts
       - name: Test common chunk parsing
-        run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/chunk-validation.test.ts -t "parses and freezes common entities"
+        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern="parses and freezes common entities"
       - name: Test common release matching
-        run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/chunk-validation.test.ts -t "rejects top-level release IDs"
+        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern="rejects top-level release IDs"
       - name: Test common references
-        run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/chunk-validation.test.ts -t "rejects broken common references"
+        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern="rejects broken common references"
       - name: Test faction chunks
-        run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/chunk-validation.test.ts -t parseFactionDataChunk
+        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern=parseFactionDataChunk
       - name: Test chunk catalog assembly
-        run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/chunk-validation.test.ts -t assembleGameDataCatalog
+        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern=assembleGameDataCatalog
       - name: Test web application
         run: npm --workspace @40k-calculator/web run test
       - name: Verify data release
