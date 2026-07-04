@@ -28,8 +28,12 @@ jobs:
         run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/validation.test.ts
       - name: Test release validation
         run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/release-validation.test.ts
-      - name: Test common chunks
-        run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/chunk-validation.test.ts -t parseCommonDataChunk
+      - name: Test common chunk parsing
+        run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/chunk-validation.test.ts -t "parses and freezes common entities"
+      - name: Test common release matching
+        run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/chunk-validation.test.ts -t "rejects top-level release IDs"
+      - name: Test common references
+        run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/chunk-validation.test.ts -t "rejects broken common references"
       - name: Test faction chunks
         run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/chunk-validation.test.ts -t parseFactionDataChunk
       - name: Test chunk catalog assembly
