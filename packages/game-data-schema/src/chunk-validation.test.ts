@@ -272,7 +272,8 @@ describe("assembleGameDataCatalog", () => {
 
   it("rejects unresolved external references during final assembly", () => {
     const commonInput = clone(COMMON_CHUNK) as unknown as Record<string, unknown>;
-    commonInput.weaponProfiles = [];
+    const commonWeapons = commonInput.weaponProfiles as Array<Record<string, unknown>>;
+    commonWeapons[0]!.id = "unrelated-shared-weapon";
     const common = parseCommonDataChunk(commonInput);
     const beta = parseFactionDataChunk(BETA_CHUNK);
 
