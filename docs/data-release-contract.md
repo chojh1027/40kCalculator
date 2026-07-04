@@ -12,7 +12,8 @@
 - `assertReleaseManifestMatchesIndex`
 - 정적 샘플 `versions.json`
 - 공통 청크 1개와 진영 청크 4개
-- 실제 파일의 경로, 바이트 크기와 SHA-256 회귀 테스트
+- 실제 파일의 경로, 바이트 크기와 SHA-256 회귀 검사
+- `npm run verify:data-release`와 통합 `npm run check`
 
 ## 파일 구조
 
