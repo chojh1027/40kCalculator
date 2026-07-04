@@ -17,8 +17,8 @@
       "kind": "faction",
       "factionId": "space-marines",
       "path": "factions/space-marines.json",
-      "sha256": "bb2a44fd8092e1302e8754fd6bf132dbe01bad3d737fc892c2f44fd2fe9b839d",
-      "sizeBytes": 4521
+      "sha256": "059d7f827cbaf711d3eb1d064f8a77cb7b9d7d8cc7fc95d6e4b2f39e6033130a",
+      "sizeBytes": 3050
     },
     {
       "id": "faction-astra-militarum",
