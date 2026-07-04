@@ -28,16 +28,20 @@ jobs:
         run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/validation.test.ts
       - name: Test release validation
         run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/release-validation.test.ts
-      - name: Test common chunk parsing
-        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern="parses and freezes common entities"
-      - name: Test common release matching
-        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern="rejects top-level release IDs"
-      - name: Test common references
-        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern="rejects broken common references"
+      - name: Test common chunks
+        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern=parseCommonDataChunk
       - name: Test faction chunks
         run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern=parseFactionDataChunk
-      - name: Test chunk catalog assembly
-        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern=assembleGameDataCatalog
+      - name: Test normal assembly
+        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern="assembles chunks in common faction order"
+      - name: Test selected faction assembly
+        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern="supports assembling only selected faction chunks"
+      - name: Test assembly input errors
+        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern="rejects release mismatches"
+      - name: Test unresolved assembly references
+        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern="rejects unresolved external references"
+      - name: Test duplicate assembly IDs
+        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern="rejects duplicate entity IDs"
       - name: Test web application
         run: npm --workspace @40k-calculator/web run test
       - name: Verify data release
