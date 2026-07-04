@@ -70,6 +70,12 @@ export interface LoadedGameDataRelease {
 
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
+export function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
 function requireFetch(fetchImpl: typeof fetch | undefined): typeof fetch {
   if (fetchImpl !== undefined) return fetchImpl;
   if (typeof globalThis.fetch !== "function") {
@@ -78,7 +84,7 @@ function requireFetch(fetchImpl: typeof fetch | undefined): typeof fetch {
       "This environment does not provide the Fetch API.",
     );
   }
-  return globalThis.fetch.bind(globalThis);
+  return globalThis.fetch;
 }
 
 function requireSubtleCrypto(subtleCrypto: SubtleCrypto | undefined): SubtleCrypto {
@@ -119,7 +125,7 @@ async function fetchBytes(
   resourceUrl: URL,
   fetchImpl: typeof fetch,
   signal: AbortSignal | undefined,
-): Promise<Uint8Array> {
+): Promise<Uint8Array<ArrayBuffer>> {
   let response: Response;
   try {
     response = await fetchImpl(resourceUrl, {
@@ -174,7 +180,10 @@ export async function sha256Hex(
   bytes: Uint8Array,
   subtleCrypto: SubtleCrypto,
 ): Promise<string> {
-  const digest = await subtleCrypto.digest("SHA-256", bytes);
+  const digest = await subtleCrypto.digest(
+    "SHA-256",
+    bytesToArrayBuffer(bytes),
+  );
   return [...new Uint8Array(digest)]
     .map((value) => value.toString(16).padStart(2, "0"))
     .join("");
@@ -291,7 +300,10 @@ async function fetchVerifiedChunkBytes(
   fetchImpl: typeof fetch,
   subtleCrypto: SubtleCrypto,
   signal: AbortSignal | undefined,
-): Promise<{ readonly bytes: Uint8Array; readonly resourceUrl: URL }> {
+): Promise<{
+  readonly bytes: Uint8Array<ArrayBuffer>;
+  readonly resourceUrl: URL;
+}> {
   const resourceUrl = new URL(descriptor.path, releaseRootUrl);
   const bytes = await fetchBytes(resourceUrl, fetchImpl, signal);
 
