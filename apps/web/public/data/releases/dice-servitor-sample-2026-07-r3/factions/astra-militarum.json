@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "dice-servitor-sample-2026-07-r3",
+  "kind": "faction",
+  "factionId": "astra-militarum",
+  "modelProfiles": [
+    {
+      "id": "guardsman-model",
+      "name": "Guardsman",
+      "ballisticSkill": 4,
+      "weaponSkill": 4,
+      "toughness": 3,
+      "save": 5,
+      "wounds": 1
+    }
+  ],
+  "weaponProfiles": [],
+  "units": [
+    {
+      "id": "infantry-squad",
+      "factionId": "astra-militarum",
+      "name": "Infantry Squad",
+      "modelProfileId": "guardsman-model",
+      "defaultModelCount": 10,
+      "minModelCount": 10,
+      "maxModelCount": 20,
+      "weaponProfileIds": [
+        "lascannon"
+      ],
+      "abilityIds": []
+    }
+  ]
+}
