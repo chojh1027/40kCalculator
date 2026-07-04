@@ -20,31 +20,5 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install locked dependencies
         run: npm ci
-      - name: Typecheck workspaces
-        run: npm run typecheck
-      - name: Test calculator
-        run: npm --workspace @40k-calculator/calculator run test
-      - name: Test catalog validation
-        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/validation.test.ts
-      - name: Test release validation
-        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/release-validation.test.ts
-      - name: Test common chunks
-        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern=parseCommonDataChunk
-      - name: Test faction chunks
-        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern=parseFactionDataChunk
-      - name: Test normal assembly
-        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern="assembles chunks in common faction order"
-      - name: Test selected faction assembly
-        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern="supports assembling only selected faction chunks"
-      - name: Test assembly input errors
-        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern="rejects release mismatches"
-      - name: Test unresolved assembly references
-        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern="rejects unresolved external references"
-      - name: Test duplicate assembly IDs
-        run: npm --workspace @40k-calculator/game-data-schema exec -- vitest run src/chunk-validation.test.ts --testNamePattern="rejects duplicate entity IDs"
-      - name: Test web application
-        run: npm --workspace @40k-calculator/web run test
-      - name: Verify data release
-        run: npm run verify:data-release
-      - name: Build web application
-        run: npm run build
+      - name: Run project checks
+        run: npm run check
