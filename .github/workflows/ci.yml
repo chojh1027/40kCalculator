@@ -28,8 +28,12 @@ jobs:
         run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/validation.test.ts
       - name: Test release validation
         run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/release-validation.test.ts
-      - name: Test chunk validation
-        run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/chunk-validation.test.ts
+      - name: Test common chunks
+        run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/chunk-validation.test.ts -t parseCommonDataChunk
+      - name: Test faction chunks
+        run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/chunk-validation.test.ts -t parseFactionDataChunk
+      - name: Test chunk catalog assembly
+        run: npm --workspace @40k-calculator/game-data-schema exec vitest run src/chunk-validation.test.ts -t assembleGameDataCatalog
       - name: Test web application
         run: npm --workspace @40k-calculator/web run test
       - name: Verify data release
