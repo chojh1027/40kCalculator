@@ -12,7 +12,8 @@
     "build": "npm --workspace @40k-calculator/web run build",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "check": "npm run typecheck && npm run test && npm run build"
+    "verify:data-release": "node scripts/verify-release-files.mjs",
+    "check": "npm run typecheck && npm run test && npm run verify:data-release && npm run build"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
