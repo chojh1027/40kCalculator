@@ -1,7 +1,8 @@
 # 데이터 릴리스 계약
 
 - 기준일: 2026-07-05
-- 상태: 릴리스 파일·네트워크 검증·IndexedDB 저장·앱 bootstrap 구현 완료
+- 상태: 릴리스 생성·검증·저장·bootstrap 구현 완료
+- 관련 문서: [데이터 릴리스 CLI](./data-release-cli.md)
 
 ## 1. 공개 계약
 
@@ -22,6 +23,7 @@
 - `IndexedDbReleaseStore`
 - `bootstrapGameData`
 - `bootstrapBrowserGameData`
+- 데이터 릴리스 CLI `validate`, `build`, `release`, `check`, `diff`, `verify`
 
 ## 2. 정적 파일 구조
 
@@ -34,7 +36,7 @@ apps/web/public/data/
    └─ factions/{factionId}.json
 ```
 
-경로는 traversal이 없는 상대 JSON 경로만 허용한다.
+모든 manifest와 chunk 경로는 traversal이 없는 상대 JSON 경로다.
 
 ## 3. ReleaseIndex
 
@@ -55,11 +57,10 @@ interface ReleaseIndex {
 
 규칙:
 
-- 릴리스 ID와 manifest 경로는 중복 불가
-- `latestReleaseId`는 릴리스 목록에 존재
-- 날짜는 유효한 `YYYY-MM-DD`
-- 미지원 필드 거부
-- 파싱 결과 동결
+- release ID와 manifest path는 중복 불가
+- `latestReleaseId`는 목록에 존재
+- 날짜는 `YYYY-MM-DD`
+- 릴리스 생성 CLI는 동일 ID 항목을 교체하고 다른 릴리스는 유지
 
 ## 4. ReleaseManifest
 
@@ -74,258 +75,289 @@ interface ReleaseManifest {
 }
 ```
 
+청크 descriptor:
+
+```ts
+interface DataChunkDescriptor {
+  readonly id: string;
+  readonly kind: "common" | "faction";
+  readonly factionId?: string;
+  readonly path: string;
+  readonly sha256: string;
+  readonly sizeBytes: number;
+}
+```
+
 규칙:
 
-- 공통 청크 정확히 1개
-- 진영 청크 최소 1개
-- 청크 ID·경로·진영 ID 중복 불가
+- common 청크 정확히 1개
+- faction 청크 최소 1개
+- 청크 ID·경로·faction ID 중복 불가
 - SHA-256은 lowercase 64자리 hex
-- `sizeBytes`는 1 이상의 safe integer
-- 미지원 필드 거부
+- `sizeBytes`는 실제 파일 바이트 길이
+- descriptor의 kind·faction ID는 payload와 일치
 
 ## 5. 청크 payload
 
 ### CommonDataChunk
 
-포함 데이터:
+```ts
+interface CommonDataChunk {
+  schemaVersion: 1;
+  releaseId: string;
+  kind: "common";
+  metadata: CatalogMetadata;
+  alliances: readonly Alliance[];
+  factions: readonly Faction[];
+  abilities: readonly Ability[];
+  weaponProfiles: readonly WeaponProfile[];
+}
+```
 
-- catalog metadata
-- Alliance
-- Faction
-- 공통 Ability
-- 공통 WeaponProfile
+포함 대상:
 
-검증:
-
-- 최상위 `releaseId`와 metadata의 `releaseId` 일치
-- Alliance·Faction 참조 무결성
-- 공통 WeaponProfile의 Ability 참조 무결성
-- 기존 catalog와 동일한 값·ID·주사위·AbilityEffect 규칙
+- metadata
+- 모든 Alliance
+- 모든 Faction
+- 모든 Ability
+- 둘 이상의 진영에서 참조하는 WeaponProfile
 
 ### FactionDataChunk
 
-포함 데이터:
+```ts
+interface FactionDataChunk {
+  schemaVersion: 1;
+  releaseId: string;
+  kind: "faction";
+  factionId: string;
+  modelProfiles: readonly ModelProfile[];
+  weaponProfiles: readonly WeaponProfile[];
+  units: readonly Unit[];
+}
+```
 
-- ModelProfile
-- 진영 전용 WeaponProfile
-- Unit
+포함 대상:
 
-검증:
+- 해당 진영 Unit이 사용하는 ModelProfile
+- 해당 진영에서만 참조하는 WeaponProfile
+- 해당 진영 Unit
 
-- 모든 Unit은 청크의 `factionId`에 속함
-- Unit의 ModelProfile은 동일 진영 청크에 존재
-- 공통 WeaponProfile과 Ability 참조 허용
-- 로컬 ID 중복과 값 범위 검증
+## 6. 릴리스 생성 소유권 규칙
 
-## 6. Catalog assembler
+### ModelProfile
+
+- 반드시 하나 이상의 Unit이 참조해야 한다.
+- 정확히 한 진영에 속해야 한다.
+- 둘 이상의 진영 Unit이 공유하면 생성 오류다.
+
+### WeaponProfile
+
+- 반드시 하나 이상의 Unit이 참조해야 한다.
+- 한 진영만 참조하면 faction 청크에 둔다.
+- 둘 이상의 진영이 참조하면 common 청크에 둔다.
+
+### Ability
+
+현재 모든 Ability는 common 청크에 둔다. Unit과 WeaponProfile은 common Ability를 참조할 수 있다.
+
+## 7. 결정적 생성
+
+직렬화 형식:
+
+```js
+JSON.stringify(value, null, 2) + "\n"
+```
+
+순서:
+
+- common 청크 우선
+- `catalog.factions` 순서대로 faction 청크
+- 각 청크의 엔티티는 원본 catalog 순서 유지
+
+동일 catalog와 `publishedDate`는 동일한 청크 bytes, `sizeBytes`, SHA-256과 manifest를 생성한다.
+
+## 8. Catalog assembler
 
 ```text
-공통 청크
-+ 선택 진영 청크
-→ 릴리스·진영 소유권 검사
-→ 공통 Faction 순서로 정렬
-→ 엔티티 배열 합성
-→ parseGameDataCatalog 최종 검증
+common chunk
++ selected faction chunks
+→ release·ownership 검사
+→ faction order 정렬
+→ entity arrays 합성
+→ parseGameDataCatalog
 → GameDataCatalog
 ```
 
 최종 검증:
 
 - 공통·진영 간 중복 ID
-- 존재하지 않는 WeaponProfile·Ability 참조
-- Unit의 ModelProfile 참조
 - Faction·Alliance 참조
-- 모든 기존 catalog 값 규칙
+- Unit·ModelProfile 참조
+- Unit·WeaponProfile·Ability 참조
+- WeaponProfile·Ability 참조
+- catalog 수치와 DiceExpression 범위
 
-## 7. 네트워크 로더
+## 9. 릴리스 CLI 계약
+
+### validate
+
+catalog metadata, ID, 참조와 청크 소유권을 검사한다.
+
+### build
+
+release 디렉터리의 청크와 manifest를 생성한다. `versions.json`은 변경하지 않는다.
+
+### release
+
+청크와 manifest를 생성하고 `versions.json`을 갱신한다.
+
+### check
+
+현재 catalog에서 생성될 payload와 커밋된 동일 release ID payload를 의미적으로 비교한다. 실제 파일 bytes는 manifest 해시 검증으로 별도 확인한다.
+
+### diff
+
+Alliance, Faction, ModelProfile, Ability, WeaponProfile과 Unit의 added·removed·changed ID를 출력한다.
+
+### verify
+
+`versions.json`에 등록된 모든 릴리스의 파일 크기, SHA-256과 descriptor identity를 검사한다.
+
+## 10. 브라우저 네트워크 로더
 
 ```text
-versions.json 조회
-→ index 검증
-→ 최신 또는 지정 릴리스 선택
-→ manifest 조회·검증
-→ 공통 및 선택 진영 청크 다운로드
+versions.json
+→ index validation
+→ latest or specified release
+→ manifest validation
+→ selected chunks fetch
 → sizeBytes
 → Web Crypto SHA-256
 → UTF-8·JSON
-→ payload 스키마
-→ descriptor 일치
+→ payload validation
+→ descriptor match
 → catalog assembler
-→ LoadedGameDataRelease
 ```
 
 선택 정책:
 
-- `releaseId` 생략 시 `latestReleaseId`
-- `factionIds` 생략 시 모든 진영
-- `factionIds` 지정 시 공통과 지정 진영만 다운로드
-- 빈·중복·미존재 진영 선택 거부
+- release ID 생략 시 `latestReleaseId`
+- faction IDs 생략 시 모든 faction
+- faction IDs 지정 시 common과 선택 faction만 다운로드
+- 빈·중복·미존재 faction 선택 거부
 
-브라우저 데이터 경로는 `document.baseURI` 기준 `data/`다.
-
-## 8. IndexedDB 저장
+## 11. IndexedDB 저장
 
 ```text
 Database: dice-servitor-game-data
 Version: 1
 ```
 
-object store:
-
 | Store | Key | 내용 |
 |---|---|---|
-| `release-indexes` | `releaseId` | 설치 당시 ReleaseIndex snapshot |
-| `installations` | `releaseId` | 진영·청크 목록·설치 시각·ReleaseIndexEntry |
+| `release-indexes` | `releaseId` | 설치 시점 ReleaseIndex snapshot |
+| `installations` | `releaseId` | faction·chunk 목록·설치 시각 |
 | `manifests` | `releaseId` | 검증된 manifest |
 | `chunks` | `{releaseId}:{chunkId}` | descriptor와 원본 ArrayBuffer |
-| `settings` | `active-release` | 활성·이전 릴리스 포인터 |
+| `settings` | `active-release` | active·previous release pointer |
 
-### 원자적 설치
+원자적 설치:
 
 ```text
-전체 네트워크 검증 완료
-→ read-write transaction 시작
-→ index snapshot 저장
-→ installation 저장
-→ manifest 저장
-→ chunk bytes 저장
-→ active pointer 저장
+network validation complete
+→ one read-write transaction
+→ index snapshot
+→ installation
+→ manifest
+→ chunk bytes
+→ active pointer
 → commit
 ```
 
-규칙:
+어느 request라도 실패하면 전체 transaction을 abort하고 이전 active release를 유지한다.
 
-- 데이터와 활성 포인터는 같은 transaction에 기록
-- 어느 요청이라도 실패하면 전체 abort
-- 실패 시 이전 활성 릴리스 유지
-- 새 릴리스가 이전 릴리스 snapshot을 덮어쓰지 않음
-
-## 9. 활성 catalog 복원
+## 12. 활성 catalog 복원
 
 ```text
-active pointer 조회
-→ stored bundle 조회
-→ pointer·설치 metadata 일치
+active pointer
+→ stored bundle
+→ metadata consistency
 → sizeBytes
-→ SHA-256 재검증
-→ JSON·payload 재검증
-→ descriptor 일치
+→ SHA-256
+→ JSON·payload validation
+→ descriptor match
 → catalog assembler
-→ ActiveStoredGameDataRelease
 ```
 
-활성 포인터가 없으면 `null`을 반환한다. 손상·누락 시 포인터는 자동 변경하지 않는다.
+손상 또는 누락 시 오류를 반환하며 pointer를 자동 변경하지 않는다.
 
-## 10. 앱 bootstrap
-
-주요 API:
-
-```ts
-bootstrapGameData(dependencies)
-bootstrapBrowserGameData()
-```
-
-처리 순서:
+## 13. 앱 bootstrap
 
 ```text
-IndexedDB store 열기
-→ 활성 릴리스 catalog 조회
-→ 정상: stored 결과 반환
-→ 없음: 최신 릴리스 설치 후 재조회
-→ 손상: 이전 릴리스 복구 후 재조회
-→ 복구 실패: 최신 릴리스 재설치 후 재조회
-→ 모두 실패: 번들 sample catalog fallback
+valid active release
+→ stored
+
+no active release
+→ install latest
+→ installed
+
+invalid active release
+→ recover previous
+→ recovered
+
+recovery failure
+→ reinstall latest
+→ installed
+
+all failure
+→ bundled-fallback
 ```
 
-반환 source:
+설치·복구 후 저장소에서 catalog를 다시 읽고 pointer의 release ID와 일치하는지 확인한다.
+
+## 14. CI 검사
 
 ```text
-stored
-installed
-recovered
-bundled-fallback
+workspace typecheck
+→ workspace tests
+→ data release CLI tests
+→ all committed release size/hash verification
+→ catalog-release semantic check
+→ web production build
 ```
 
-### fallback 정책
+주요 명령:
 
-- 번들 catalog는 최종 fallback으로만 사용
-- IndexedDB 열기 실패 시 fallback
-- 복구와 재설치가 모두 실패한 경우 fallback
-- fallback 결과에는 사용자 안내 문구와 진단 세부 정보 포함
-- 사용자는 UI에서 bootstrap을 다시 시도 가능
-
-### Strict Mode 중복 방지
-
-브라우저 bootstrap Promise는 모듈 수준에서 공유한다. React Strict Mode가 컴포넌트를 재실행해도 같은 초기 Promise를 사용하므로 릴리스 다운로드와 설치가 중복되지 않는다. 사용자가 Retry를 누른 경우에만 새 Promise를 생성한다.
-
-## 11. UI catalog adapter
-
-```ts
-createCatalogViewData(catalog: GameDataCatalog): CatalogViewData
+```bash
+npm run data-release:validate
+npm run data-release:check
+npm run test:data-release-cli
+npm run verify:data-release
+npm run check
 ```
 
-생성 항목:
+## 15. 테스트 기준
 
-- alliance·faction·unit·weapon 배열
-- model·ability·weapon lookup map
-- ModelProfile이 결합된 UI Unit
-- 계산에 필요한 BS·WS·T·Sv·W 편의 필드
+- catalog ID와 참조 오류
+- shared weapon common 배치
+- faction 전용 데이터 분할
+- orphan 엔티티 거부
+- cross-faction ModelProfile 거부
+- 결정적 bytes와 descriptor
+- 동일 release ID index 교체
+- 복수 릴리스 보존
+- catalog entity diff
+- 모든 커밋 릴리스 hash 검증
+- repository catalog와 릴리스 payload 일치
+- 네트워크 오류와 descriptor mismatch
+- IndexedDB 원자성·복구·저장 손상
+- bootstrap cache·install·recover·fallback
 
-`App`은 전역 catalog 상수를 직접 가져오지 않고 `CatalogViewData`를 prop으로 받는다.
+## 16. 배포 검증 대상
 
-## 12. 오류 분류
-
-네트워크 로더:
-
-```text
-environment
-network
-http
-json
-schema
-release-not-found
-faction-selection
-size-mismatch
-hash-mismatch
-descriptor-mismatch
-assembly
-```
-
-저장 계층:
-
-```text
-environment
-invalid-installation
-transaction
-not-found
-invalid-state
-integrity
-schema
-assembly
-```
-
-## 13. 테스트 기준
-
-- 최신·지정 릴리스 선택
-- 선택 진영 다운로드
-- HTTP·JSON·스키마·descriptor 오류
-- 크기와 SHA-256 불일치
-- 원자적 설치 실패 시 기존 활성 버전 유지
-- 복수 릴리스와 이전 버전 복구
-- 저장 바이트 손상 검출
-- 정상 활성 catalog 우선 사용
-- 빈 저장소 최신 릴리스 설치
-- 손상 활성 데이터 이전 버전 복구
-- 복구 실패 후 네트워크 재설치
-- 모든 경로 실패 시 번들 fallback
-- 설치 포인터와 재조회 결과 불일치 거부
-- 동적 catalog view adapter
-
-## 14. 배포 검증 대상
-
-- GitHub Pages 첫 접근에서 릴리스 설치
-- 새로고침에서 IndexedDB catalog 재사용
+- GitHub Pages 첫 접근 릴리스 설치
+- 새로고침 IndexedDB 재사용
 - 브라우저 저장소 삭제 후 재설치
-- 모바일 브라우저 IndexedDB 동작
+- 모바일 브라우저 IndexedDB
 
-다음 직접 개발 작업은 **정적 catalog 입력에서 청크·manifest·versions.json을 생성하는 데이터 릴리스 CLI**다.
+다음 직접 개발 작업은 **일반 상처와 Critical Wound 상태를 분리하고 Mortal Wounds의 별도 피해 경로를 추가하는 작업**이다.
