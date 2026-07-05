@@ -23,6 +23,8 @@ Dice Servitor는 워해머 40,000 전투 절차를 실제 이산 확률분포로
 - 빈 저장소의 최신 릴리스 자동 설치
 - 손상 데이터의 이전 버전 복구와 네트워크 재설치
 - loading·recovery·fallback·retry UI
+- catalog에서 청크·manifest·versions index를 생성하는 데이터 릴리스 CLI
+- catalog와 커밋 릴리스의 의미적 일치 검사
 - `npm ci` 기반 CI와 GitHub Pages 시험 배포
 
 정상 경로에서는 검증된 IndexedDB catalog를 사용합니다. 저장소를 열 수 없거나 복구와 재설치가 모두 실패한 경우에만 번들 샘플 catalog를 최종 fallback으로 사용합니다.
@@ -89,7 +91,7 @@ apps/web/public/data/
    └─ factions/{factionId}.json
 ```
 
-검증 순서:
+브라우저 검증 순서:
 
 ```text
 HTTP 성공
@@ -110,6 +112,47 @@ loadBrowserGameDataRelease(options)
 bootstrapGameData(dependencies)
 bootstrapBrowserGameData()
 ```
+
+## 데이터 릴리스 CLI
+
+기본 실행:
+
+```bash
+npm run data-release -- help
+```
+
+지원 명령:
+
+```text
+validate  catalog ID·참조·청크 소유권 검사
+build     청크와 manifest 생성
+release   청크·manifest 생성 후 versions.json 갱신
+check     catalog와 커밋 릴리스 payload 비교
+ diff      이전·다음 catalog 엔티티 차이 출력
+verify    모든 커밋 릴리스의 크기·SHA-256 검사
+```
+
+예시:
+
+```bash
+npm run data-release:validate
+npm run data-release:check
+
+npm run data-release -- release \
+  --catalog apps/web/src/data/catalog.json \
+  --data-root apps/web/public/data \
+  --published-date 2026-07-05
+```
+
+분할 정책:
+
+- 여러 진영이 참조하는 WeaponProfile은 common 청크
+- 한 진영만 참조하는 WeaponProfile은 해당 faction 청크
+- ModelProfile은 사용하는 Unit의 faction 청크
+- 참조되지 않은 ModelProfile·WeaponProfile은 오류
+- 여러 진영이 공유하는 ModelProfile은 오류
+
+상세 사용법은 [데이터 릴리스 CLI](docs/data-release-cli.md)를 참고합니다.
 
 ## IndexedDB 저장
 
@@ -162,8 +205,10 @@ npm run check
 
 ```text
 workspace 타입 검사
-→ 전체 테스트
-→ 정적 릴리스 무결성 검사
+→ workspace 테스트
+→ 데이터 릴리스 CLI 테스트
+→ 모든 커밋 릴리스 크기·SHA-256 검사
+→ catalog와 커밋 릴리스 의미적 일치 검사
 → 웹 프로덕션 빌드
 ```
 
@@ -190,7 +235,8 @@ main push 또는 workflow_dispatch
 - Mortal Wounds 별도 피해 경로
 - 피해 감소와 Feel No Pain
 - 복수 공격 그룹 순차 처리
-- 데이터 릴리스 자동 생성 CLI
+- 원격 데이터 수집·변환 파이프라인
+- 사용자용 릴리스 선택 UI
 - 전체 게임 데이터
 
 ## 프로젝트 문서
@@ -200,3 +246,4 @@ main push 또는 workflow_dispatch
 - [개발 지침](docs/development-guide.md)
 - [개발 로드맵](docs/roadmap.md)
 - [데이터 릴리스 계약](docs/data-release-contract.md)
+- [데이터 릴리스 CLI](docs/data-release-cli.md)
