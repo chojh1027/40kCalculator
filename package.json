@@ -14,9 +14,10 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "data-release": "node scripts/data-release-cli.mjs",
     "data-release:validate": "node scripts/data-release-cli.mjs validate --catalog apps/web/src/data/catalog.json",
-    "test:data-release-cli": "node --test scripts/data-release-cli.test.mjs",
+    "data-release:check": "node scripts/data-release-cli.mjs check --catalog apps/web/src/data/catalog.json --data-root apps/web/public/data",
+    "test:data-release-cli": "node --test scripts/data-release-*.test.mjs",
     "verify:data-release": "node scripts/verify-release-files.mjs",
-    "check": "npm run typecheck && npm run test && npm run test:data-release-cli && npm run verify:data-release && npm run build"
+    "check": "npm run typecheck && npm run test && npm run test:data-release-cli && npm run verify:data-release && npm run data-release:check && npm run build"
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
