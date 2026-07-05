@@ -9,6 +9,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at top, #242b31 0, #0c0f12 48%); }
 button, input, select { font: inherit; }
+button { cursor: pointer; }
 
 .page-shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 56px 0 80px; }
 .hero { max-width: 760px; margin-bottom: 28px; }
@@ -21,7 +22,7 @@ h2 { margin: 0 0 20px; font-size: 1.15rem; letter-spacing: 0.02em; }
 .controls .selector-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .controls .selector-row label { min-width: 0; }
 select, input { width: 100%; border: 1px solid #454c53; border-radius: 8px; background: #111519; color: #f2efe6; padding: 11px 12px; }
-select:focus, input:focus { outline: 2px solid #c7a75c; outline-offset: 2px; }
+select:focus, input:focus, button:focus-visible, summary:focus-visible { outline: 2px solid #c7a75c; outline-offset: 2px; }
 .control-section { margin-top: 28px; padding-top: 24px; border-top: 1px solid #343a40; }
 .weapon-profile, .defender-profile { display: grid; margin: 22px 0 0; border: 1px solid #3a4045; border-radius: 10px; background: #111519; overflow: hidden; }
 .weapon-profile { grid-template-columns: repeat(6, minmax(0, 1fr)); }
@@ -34,6 +35,26 @@ select:focus, input:focus { outline: 2px solid #c7a75c; outline-offset: 2px; }
 dt { color: #92989e; font-size: 0.75rem; }
 dd { margin: 4px 0 0; font-weight: 750; }
 .scope-note { margin: 20px 0 0; color: #8d949a; font-size: 0.78rem; line-height: 1.55; }
+
+.data-status { display: flex; align-items: center; gap: 14px; margin: -8px 0 20px; border: 1px solid #3d464e; border-radius: 10px; background: rgba(17, 21, 25, 0.9); padding: 12px 14px; color: #c7cbd0; font-size: 0.78rem; }
+.data-status > div { display: grid; gap: 3px; min-width: 0; flex: 1; }
+.data-status strong { color: #e1e5e8; font-size: 0.82rem; }
+.data-status span { color: #92999f; }
+.data-status--warning { border-color: #64532c; background: rgba(36, 31, 20, 0.94); }
+.data-status--warning strong { color: #ead394; }
+.data-status details { min-width: 0; color: #aeb4b9; }
+.data-status summary { cursor: pointer; white-space: nowrap; }
+.data-status pre { max-width: min(620px, 70vw); max-height: 180px; overflow: auto; margin: 8px 0 0; border: 1px solid #3a4045; border-radius: 7px; background: #0d1114; padding: 10px; color: #b7bdc2; font: 0.72rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; }
+.data-status button { border: 1px solid #806b35; border-radius: 8px; background: #2a2416; color: #ead394; padding: 8px 11px; font-weight: 700; white-space: nowrap; }
+.data-status button:hover { background: #352c19; }
+
+.app-state { min-height: 100vh; }
+.loading-panel { display: flex; align-items: center; gap: 18px; max-width: 620px; }
+.loading-panel h2 { margin-bottom: 6px; }
+.loading-panel p { margin: 0; color: #9fa5aa; line-height: 1.5; }
+.loading-indicator { width: 32px; height: 32px; flex: 0 0 auto; border: 3px solid #3b4248; border-top-color: #c7a75c; border-radius: 50%; animation: data-loading-spin 800ms linear infinite; }
+@keyframes data-loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .loading-indicator { animation: none; border-color: #c7a75c; } }
 
 .likely-result { border: 1px solid #4b4330; border-left: 4px solid #c7a75c; border-radius: 10px; background: #191d20; padding: 18px 20px; display: grid; gap: 7px; }
 .likely-result > span { color: #a9adb1; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
@@ -65,6 +86,10 @@ dd { margin: 4px 0 0; font-weight: 750; }
 @media (max-width: 780px) {
   .page-shell { width: min(100% - 20px, 680px); padding-top: 34px; }
   .layout { grid-template-columns: 1fr; }
+  .data-status { align-items: stretch; flex-direction: column; }
+  .data-status details { order: 3; }
+  .data-status pre { max-width: 100%; }
+  .data-status button { align-self: start; }
   .weapon-profile div, .defender-profile div { padding-inline: 4px; }
   .applied-rules { padding-inline: 14px; }
   .result-groups { gap: 19px; }
