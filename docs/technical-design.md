@@ -1,20 +1,35 @@
 # Dice Servitor 기술 설계서
 
-- 문서 상태: v0.16
+- 문서 상태: v0.17
 - 기준일: 2026-07-05
 - 대상 저장소: `chojh1027/40kCalculator`
-- 관련 문서: [`proposal.md`](./proposal.md), [`roadmap.md`](./roadmap.md), [`development-guide.md`](./development-guide.md), [`data-release-contract.md`](./data-release-contract.md)
+- 관련 문서: [`proposal.md`](./proposal.md), [`roadmap.md`](./roadmap.md), [`development-guide.md`](./development-guide.md), [`data-release-contract.md`](./data-release-contract.md), [`data-release-cli.md`](./data-release-cli.md)
 
 ## 1. 시스템 구성
+
+```text
+catalog.json
+├─ game-data-schema runtime validation
+├─ data release CLI
+│  ├─ common/faction split
+│  ├─ manifest + hash generation
+│  ├─ versions index update
+│  └─ catalog-release consistency check
+└─ static release files
+   └─ browser release loader
+      └─ IndexedDB release store
+         └─ application bootstrap
+            └─ CatalogViewData
+               └─ App
+                  └─ calculator
+```
+
+React 경로:
 
 ```text
 main.tsx
 └─ DataApplication.tsx
    ├─ app-bootstrap.ts
-   │  ├─ indexeddb-release-store.ts
-   │  ├─ release-store.ts
-   │  ├─ network-release-loader.ts
-   │  └─ bundled catalog fallback
    ├─ catalog-view.ts
    └─ App.tsx
       ├─ ability-rules.ts
@@ -23,78 +38,65 @@ main.tsx
       └─ @40k-calculator/calculator
 ```
 
-데이터 계층:
+릴리스 도구 경로:
 
 ```text
-static release files
-→ network validation
-→ IndexedDB atomic installation
-→ active stored catalog validation
-→ application bootstrap policy
-→ CatalogViewData
-→ App
+scripts/data-release-cli.mjs
+├─ scripts/data-release-lib.mjs
+└─ scripts/data-release-check.mjs
 ```
 
-모듈 책임:
+## 2. 모듈 책임
 
-- `packages/calculator`: 순수 확률 계산과 피해 할당
-- `packages/game-data-schema`: catalog·release·chunk 계약과 런타임 검증
+- `packages/calculator`: 순수 전투 확률 계산과 피해 할당
+- `packages/game-data-schema`: catalog·release·chunk 타입과 런타임 검증
 - `catalog.ts`: 번들 sample catalog
-- `catalog-view.ts`: UI lookup과 resolved Unit 생성
-- `network-release-loader.ts`: 정적 파일 다운로드와 무결성 검증
-- `release-store.ts`: 저장 인터페이스와 설치·복원 조합
+- `catalog-view.ts`: UI lookup과 resolved Unit 구성
+- `network-release-loader.ts`: 정적 릴리스 다운로드와 무결성 검증
+- `release-store.ts`: 저장 인터페이스, 설치와 활성 catalog 복원
 - `indexeddb-release-store.ts`: IndexedDB schema와 transaction
-- `app-bootstrap.ts`: active·install·recover·fallback 결정
-- `DataApplication.tsx`: 비동기 상태와 재시도
-- `App.tsx`: 주입된 catalog를 이용한 계산 UI
+- `app-bootstrap.ts`: active·recover·install·fallback 정책
+- `DataApplication.tsx`: 비동기 초기화 상태와 retry
+- `App.tsx`: 주입된 catalog를 사용하는 계산 UI
+- `data-release-lib.mjs`: catalog 검증, 청크 생성, manifest, index, diff와 verify
+- `data-release-check.mjs`: catalog와 커밋 payload 의미적 비교
+- `data-release-cli.mjs`: 명령행 인터페이스
 
-## 2. 핵심 원칙
+## 3. 핵심 설계 원칙
 
 ### 결정적 계산
 
-계산 엔진은 난수를 사용하지 않는다. 동일 입력은 동일한 이산분포와 요약 결과를 반환한다.
+계산 엔진은 난수를 사용하지 않는다. 동일 입력은 동일한 PMF와 요약 결과를 반환한다.
 
 ### 선언형 규칙
 
 게임 데이터는 실행 코드를 포함하지 않는다. Ability는 허용된 `AbilityEffect`만 가진다.
 
-### 계산·데이터 획득·렌더링 분리
+### 계산·데이터·렌더링 분리
 
-- 계산 엔진은 Ability ID와 UI를 알지 못한다.
-- bootstrap 계층은 React 입력 상태를 알지 못한다.
-- `App`은 네트워크나 IndexedDB를 직접 호출하지 않는다.
-- React는 bootstrap 결과를 `CatalogViewData`로 변환해 주입한다.
+- 계산 엔진은 UI와 저장소를 알지 못한다.
+- bootstrap은 계산 입력 상태를 알지 못한다.
+- `App`은 네트워크와 IndexedDB를 직접 호출하지 않는다.
+- 릴리스 CLI는 React 코드를 알지 못한다.
 
 ### 검증된 데이터만 활성화
 
-- 네트워크 파일은 크기와 SHA-256 검증 후 파싱한다.
-- 청크 payload와 교차 참조 검증 후에만 설치한다.
-- 데이터와 활성 포인터는 하나의 IndexedDB transaction에 기록한다.
-- 저장된 청크도 사용 전에 다시 검증한다.
+- 네트워크 파일은 sizeBytes와 SHA-256 확인 후 파싱한다.
+- payload와 교차 참조 검증 후 설치한다.
+- 데이터와 active pointer는 하나의 IndexedDB transaction에 기록한다.
+- 저장된 bytes도 사용 전에 재검증한다.
 
-### 복구 우선순위
+### catalog 단일 원본
 
-```text
-valid active release
-→ previous release recovery
-→ latest release reinstall
-→ bundled fallback
-```
+- `catalog.json`이 릴리스 payload의 원본이다.
+- 청크와 manifest를 직접 편집하지 않는다.
+- CLI의 `check`가 catalog와 커밋 릴리스의 의미적 일치를 검증한다.
 
-번들 catalog는 정상 운영 데이터가 아니라 최종 가용성 fallback이다.
-
-### 정적 호스팅 독립성
-
-- Vite `base: "./"`
-- `document.baseURI` 기반 데이터 URL
-- 브라우저 내 계산과 저장
-- 호스팅 사업자 전용 API 비의존
-
-## 3. 계산 파이프라인
+## 4. 계산 파이프라인
 
 ```text
 AttackCount PMF
-→ reroll-aware hit outcome
+→ reroll-aware hit outcomes
 → normal/critical hit joint PMF
 → Sustained/Lethal resolution
 → wound rolls + automatic wounds
@@ -105,16 +107,27 @@ AttackCount PMF
 → CalculationResult
 ```
 
-지원 규칙:
+현재 지원:
 
-- 고정·가변 공격과 피해
+- 고정·가변 공격
+- 고정·가변 피해
 - 명중·상처 재굴림
-- Critical Hit 기준
+- Critical Hit
 - Sustained Hits
 - Lethal Hits
 - 다중 운드 non-spill
 
-## 4. Ability 효과 모델
+다음 확장 지점:
+
+```text
+wound roll outcome
+→ normal wound | critical wound | failure
+→ regular save path
+→ mortal wound path
+→ combined damage allocation
+```
+
+## 5. AbilityEffect 모델
 
 ```ts
 type AbilityEffect =
@@ -125,25 +138,27 @@ type AbilityEffect =
   | { kind: "lethal-hits" };
 ```
 
-합성:
+합성 정책:
+
+- Unit Ability 이후 Weapon Ability
+- 중복 ID 제거
+- 재굴림은 가장 강한 정책
+- Critical Hit은 가장 낮은 임계값
+- Lethal Hits는 논리 OR
+- Sustained Hits 충돌 검사
+
+후속 확장 후보:
 
 ```text
-Unit ability IDs
-→ Weapon ability IDs
-→ 중복 제거
-→ effect composition
-→ ResolvedAbilityRules
-→ BattleInput
+critical-wound-threshold
+devastating-wounds
+damage-reduction
+feel-no-pain
 ```
 
-정책:
+## 6. Catalog와 UI 모델
 
-- 재굴림: 가장 강한 정책
-- Critical Hit: 가장 낮은 임계값
-- Lethal Hits: 논리 OR
-- Sustained Hits: 동일 값 허용, 상충 값 오류
-
-## 5. Catalog 모델
+Catalog 관계:
 
 ```text
 Alliance
@@ -154,58 +169,134 @@ Alliance
       └─ Ability IDs
 ```
 
-### CatalogViewData
+`createCatalogViewData`는 검증된 catalog에서 다음을 만든다.
 
-```ts
-interface CatalogViewData {
-  catalog: GameDataCatalog;
-  alliances: readonly Alliance[];
-  factions: readonly Faction[];
-  units: readonly Unit[];
-  weaponsById: ReadonlyMap<string, Weapon>;
-  abilitiesById: ReadonlyMap<string, Ability>;
-  modelProfilesById: ReadonlyMap<string, ModelProfile>;
-}
-```
+- Alliance·Faction·Unit·Weapon 배열
+- ModelProfile·Ability·Weapon lookup map
+- ModelProfile이 결합된 UI Unit
+- BS·WS·T·Sv·W 편의 필드
 
-`createCatalogViewData`는 Unit에 ModelProfile을 결합하고 다음 편의 필드를 제공한다.
+`App`은 `CatalogViewData`를 prop으로 받는다.
+
+## 7. 정적 릴리스 구조
 
 ```text
-weaponIds
-ballisticSkill
-weaponSkill
-toughness
-save
-invulnerableSave
-wounds
-```
-
-`App`은 module-global catalog 대신 이 객체를 prop으로 받는다.
-
-## 6. 정적 릴리스 계층
-
-```text
-versions.json
-└─ releases/{releaseId}/manifest.json
+apps/web/public/data/
+├─ versions.json
+└─ releases/{releaseId}/
+   ├─ manifest.json
    ├─ common.json
    └─ factions/{factionId}.json
 ```
 
-네트워크 처리:
+### CommonDataChunk
+
+- metadata
+- Alliance
+- Faction
+- Ability
+- 둘 이상의 진영이 공유하는 WeaponProfile
+
+### FactionDataChunk
+
+- 해당 진영 ModelProfile
+- 해당 진영 전용 WeaponProfile
+- 해당 진영 Unit
+
+## 8. 데이터 릴리스 CLI
+
+명령:
 
 ```text
-index fetch·parse
-→ release selection
-→ manifest fetch·parse
-→ chunk selection
-→ byte length
-→ SHA-256
-→ JSON·payload validation
-→ descriptor match
-→ catalog assembly
+validate
+build
+release
+check
+diff
+verify
 ```
 
-## 7. IndexedDB 설계
+### 분할 알고리즘
+
+```text
+Unit의 factionId 수집
+→ ModelProfile 사용 진영 집합 계산
+→ WeaponProfile 사용 진영 집합 계산
+→ weapon 사용 진영 수 > 1: common
+→ weapon 사용 진영 수 = 1: faction
+→ model 사용 진영 수 = 1: faction
+→ orphan 또는 cross-faction model: 오류
+```
+
+### 결정적 직렬화
+
+```js
+JSON.stringify(value, null, 2) + "\n"
+```
+
+동일 catalog와 published date는 동일한 bytes, sizeBytes와 SHA-256을 만든다.
+
+### manifest 생성
+
+```text
+common bytes
+→ common descriptor
+→ catalog faction 순서의 faction bytes
+→ faction descriptors
+→ ReleaseManifest
+```
+
+### versions 갱신
+
+- 동일 release ID는 교체
+- 다른 릴리스는 유지
+- effective date와 ID 순서로 정렬
+- 명시적으로 실행한 release ID를 latest로 설정
+
+### catalog-release check
+
+```text
+catalog releaseId로 index entry 검색
+→ committed manifest 읽기
+→ 같은 publishedDate로 artifacts 생성
+→ descriptor identity 비교
+→ 각 payload 의미적 비교
+→ 모든 release 파일 hash 검증
+```
+
+공백과 줄바꿈 차이는 payload 비교에서 제외한다. 실제 bytes 무결성은 manifest hash로 별도 검사한다.
+
+## 9. 브라우저 네트워크 로더
+
+```text
+versions.json
+→ release selection
+→ manifest
+→ selected chunks
+→ byte length
+→ Web Crypto SHA-256
+→ JSON·payload validation
+→ descriptor match
+→ catalog assembler
+```
+
+오류 분류:
+
+```text
+environment
+network
+http
+json
+schema
+release-not-found
+faction-selection
+size-mismatch
+hash-mismatch
+descriptor-mismatch
+assembly
+```
+
+## 10. IndexedDB 설계
 
 ```text
 Database: dice-servitor-game-data
@@ -235,116 +326,42 @@ network validation complete
 
 어느 request라도 실패하면 전체 transaction이 abort된다.
 
-## 8. 활성 catalog 복원
+## 11. Application bootstrap
 
 ```text
-active pointer
-→ stored bundle
-→ metadata consistency
-→ sizeBytes
-→ SHA-256
-→ JSON·chunk validation
-→ descriptor consistency
-→ catalog assembler
-→ ActiveStoredGameDataRelease
-```
-
-손상된 데이터는 오류를 반환하며 포인터를 자동 변경하지 않는다.
-
-## 9. Application bootstrap
-
-### 순수 정책 함수
-
-```ts
-bootstrapGameData(dependencies): Promise<CatalogBootstrapResult>
-```
-
-의존성:
-
-```text
-bundledCatalog
-openStore
-loadActive
-installLatest
-now
-```
-
-분기:
-
-```text
-store open failure
-→ bundled-fallback
-
-active valid
+valid active release
 → stored
 
 active missing
-→ install latest
-→ stored re-read
+→ latest install
 → installed
 
 active invalid
-→ recover previous
-→ stored re-read
+→ previous recovery
 → recovered
 
 recovery failure
-→ reinstall latest
-→ stored re-read
+→ latest reinstall
 → installed
 
 all failure
 → bundled-fallback
 ```
 
-설치 또는 복구 이후에는 저장소에서 catalog를 다시 읽는다. 반환된 활성 릴리스 ID가 설치·복구 포인터와 다르면 `invalid-state`로 처리한다.
+설치 또는 복구 후 저장소에서 catalog를 다시 읽는다. pointer와 실제 active release ID가 다르면 `invalid-state`다.
 
-### 브라우저 조합
+React Strict Mode 중복 실행을 막기 위해 초기 bootstrap Promise를 공유한다. Retry만 새 Promise를 생성한다.
 
-```ts
-bootstrapBrowserGameData()
-```
+## 12. 데이터 상태 UI
 
-연결 구현:
+표시 항목:
 
-- `openIndexedDbReleaseStore`
-- `loadActiveGameDataRelease`
-- `downloadAndInstallBrowserGameDataRelease`
-- 번들 `CATALOG`
-
-## 10. React 초기화
-
-`DataApplication.tsx` 상태:
-
-```text
-loading
-→ ready with stored/installed/recovered catalog
-→ ready with bundled fallback
-```
-
-초기 bootstrap Promise는 module-level singleton으로 공유한다. React Strict Mode의 mount 재실행은 동일 Promise를 구독한다. Retry는 새 Promise를 생성한다.
-
-렌더링:
-
-```text
-loading
-→ LoadingApplication
-
-ready
-→ createCatalogViewData(result.catalog)
-→ App(catalog, dataStatus, retry)
-```
-
-## 11. 데이터 상태 UI
-
-표시 정보:
-
-- 데이터 source
+- source
 - release ID
 - effective date
-- 복구·fallback warning
-- 실패 진단 details
-- fallback Retry 버튼
+- recovery·fallback warning
+- diagnostics
+- fallback retry
 
 source:
 
@@ -355,98 +372,45 @@ recovered
 bundled-fallback
 ```
 
-## 12. 상세 결과 UI
-
-```text
-Attacks
-Hit Resolution
-├─ Normal Hits
-├─ Critical Hits
-├─ Sustained Hits
-└─ Total Hits
-Wound Resolution
-├─ Wound Rolls
-├─ Automatic Wounds
-└─ Total Wounds
-Saves and Damage
-├─ Failed Saves
-├─ Damage per Failed Save
-├─ Effective Damage
-└─ Models Destroyed
-```
-
-## 13. 오류 모델
-
-네트워크:
-
-```text
-environment
-network
-http
-json
-schema
-release-not-found
-faction-selection
-size-mismatch
-hash-mismatch
-descriptor-mismatch
-assembly
-```
-
-저장:
-
-```text
-environment
-invalid-installation
-transaction
-not-found
-invalid-state
-integrity
-schema
-assembly
-```
-
-bootstrap은 오류를 사용자용 notice와 진단 details로 변환하되, 최종 fallback 이전에 복구와 재설치를 모두 시도한다.
-
-## 14. 테스트 구조
+## 13. 테스트 구조
 
 ### 계산기
 
 - 골든 결과
-- 분포 정규화와 불변식
+- 분포 정규화
 - 재굴림
 - Critical Hit
-- Sustained/Lethal
+- Sustained·Lethal
 - non-spill
 
-### 릴리스
+### 릴리스 계약
 
-- index·manifest·chunk schema
-- 실제 파일 크기와 SHA-256
-- 선택 진영 다운로드
-- descriptor 불일치
-- catalog assembly
+- index·manifest·chunk validation
+- descriptor와 payload 일치
+- catalog assembler
+- 실제 파일 해시
 
-### 저장
+### 릴리스 CLI
 
-- 원자적 설치
-- transaction 실패 보존
-- 복수 릴리스
-- 이전 버전 복구
-- 저장 바이트 손상
+- shared·faction weapon 분할
+- model ownership
+- deterministic descriptors
+- versions update
+- multi-release verify
+- entity diff
+- orphan·cross-faction 오류
+- repository catalog–release consistency
 
-### bootstrap
+### 저장·bootstrap
 
-- active cache 우선
-- empty store install
-- corrupt active recovery
-- recovery failure reinstall
-- open failure fallback
-- complete failure fallback
-- pointer mismatch
-- catalog view adapter
+- atomic install
+- transaction failure preservation
+- multi-release recovery
+- stored corruption
+- cache-first bootstrap
+- recovery·reinstall·fallback
 
-## 15. CI와 배포
+## 14. CI와 배포
 
 ```text
 PR 또는 main push
@@ -459,35 +423,35 @@ PR 또는 main push
 
 ```text
 typecheck
-→ tests
-→ static release verification
+→ workspace tests
+→ data release CLI tests
+→ committed release hash verification
+→ catalog-release semantic check
 → web production build
 ```
 
-GitHub Pages 배포 후 다음을 수동 검증한다.
+GitHub Pages 배포 후 수동 smoke test:
 
 - 첫 설치
-- 새로고침 cached release
+- 새로고침 cache 재사용
 - 저장소 삭제 후 재설치
 - 모바일 IndexedDB
 
-## 16. 다음 단계
-
-데이터 릴리스 CLI:
+## 15. 다음 단계
 
 ```text
-validated catalog input
-→ common/faction chunk generation
-→ file output
-→ sizeBytes and SHA-256
-→ manifest generation
-→ versions.json update
-→ semantic regression verification
+wound outcome state
+→ normal wound / critical wound
+→ mortal wound PMF
+→ regular and mortal damage ordering
+→ UI stage distributions
+→ Devastating Wounds AbilityEffect
 ```
 
 후속 기능:
 
-- Critical Wound와 Mortal Wounds
 - 피해 감소와 Feel No Pain
 - 복수 공격 그룹
-- 검색, 프리셋과 다국어
+- 검색과 프리셋
+- 데이터 버전 선택
+- 다국어
