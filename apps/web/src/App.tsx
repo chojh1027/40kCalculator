@@ -8,21 +8,34 @@ import {
 } from "@40k-calculator/calculator";
 import { DetailedResults } from "./DetailedResults";
 import { resolveAbilityRules } from "./data/ability-rules";
-import {
-  ABILITIES_BY_ID,
-  ALLIANCES,
-  FACTIONS,
-  UNITS,
-  WEAPONS_BY_ID,
-  type Unit,
-  type Weapon,
-} from "./data/catalog";
+import type { CatalogBootstrapResult } from "./data/app-bootstrap";
+import type {
+  CatalogViewData,
+  Unit,
+  Weapon,
+} from "./data/catalog-view";
 
-const INITIAL_ALLIANCE_ID = "imperium";
-const INITIAL_FACTION_ID = "space-marines";
-const INITIAL_ATTACKING_UNIT_ID = "intercessor-squad";
-const INITIAL_DEFENDING_UNIT_ID = "intercessor-squad";
-const INITIAL_WEAPON_ID = "bolt-rifle";
+const PREFERRED_ALLIANCE_ID = "imperium";
+const PREFERRED_FACTION_ID = "space-marines";
+const PREFERRED_ATTACKING_UNIT_ID = "intercessor-squad";
+const PREFERRED_DEFENDING_UNIT_ID = "intercessor-squad";
+const PREFERRED_WEAPON_ID = "bolt-rifle";
+
+interface AppProps {
+  readonly catalog: CatalogViewData;
+  readonly dataStatus: CatalogBootstrapResult;
+  readonly onRetryDataLoad?: () => void;
+}
+
+interface InitialSelection {
+  readonly allianceId: string;
+  readonly factionId: string;
+  readonly attackingUnitId: string;
+  readonly defendingUnitId: string;
+  readonly weaponId: string;
+  readonly attackingModelCount: number;
+  readonly defendingModelCount: number;
+}
 
 function formatDiceValue(value: AttackCount | DamageAmount): string {
   if (typeof value === "number") return String(value);
@@ -34,77 +47,155 @@ function formatDiceValue(value: AttackCount | DamageAmount): string {
   return `${dice}${modifier > 0 ? "+" : ""}${modifier}`;
 }
 
-function getUnitWeapons(unit: Unit): Weapon[] {
+function getUnitWeapons(
+  unit: Unit,
+  weaponsById: CatalogViewData["weaponsById"],
+): Weapon[] {
   return unit.weaponIds
-    .map((weaponId) => WEAPONS_BY_ID.get(weaponId))
+    .map((weaponId) => weaponsById.get(weaponId))
     .filter((weapon): weapon is Weapon => weapon !== undefined);
 }
 
-function getFirstFactionForAlliance(allianceId: string) {
-  return FACTIONS.find((faction) => faction.allianceId === allianceId);
+function createInitialSelection(catalog: CatalogViewData): InitialSelection {
+  const alliance =
+    catalog.alliances.find((candidate) => candidate.id === PREFERRED_ALLIANCE_ID) ??
+    catalog.alliances[0];
+  if (!alliance) throw new Error("The catalog must contain at least one alliance.");
+
+  const allianceFactions = catalog.factions.filter(
+    (faction) => faction.allianceId === alliance.id,
+  );
+  const faction =
+    allianceFactions.find((candidate) => candidate.id === PREFERRED_FACTION_ID) ??
+    allianceFactions[0] ??
+    catalog.factions[0];
+  if (!faction) throw new Error("The catalog must contain at least one faction.");
+
+  const factionUnits = catalog.units.filter(
+    (unit) => unit.factionId === faction.id,
+  );
+  const attackingUnit =
+    factionUnits.find(
+      (candidate) => candidate.id === PREFERRED_ATTACKING_UNIT_ID,
+    ) ??
+    factionUnits[0] ??
+    catalog.units[0];
+  if (!attackingUnit) throw new Error("The catalog must contain at least one unit.");
+
+  const defendingUnit =
+    factionUnits.find(
+      (candidate) => candidate.id === PREFERRED_DEFENDING_UNIT_ID,
+    ) ?? attackingUnit;
+  const weapons = getUnitWeapons(attackingUnit, catalog.weaponsById);
+  const weapon =
+    weapons.find((candidate) => candidate.id === PREFERRED_WEAPON_ID) ??
+    weapons[0];
+  if (!weapon) {
+    throw new Error(`${attackingUnit.name} does not reference a valid weapon.`);
+  }
+
+  return {
+    allianceId: alliance.id,
+    factionId: faction.id,
+    attackingUnitId: attackingUnit.id,
+    defendingUnitId: defendingUnit.id,
+    weaponId: weapon.id,
+    attackingModelCount: attackingUnit.defaultModelCount,
+    defendingModelCount: defendingUnit.defaultModelCount,
+  };
 }
 
-function getFirstUnitForFaction(factionId: string) {
-  return UNITS.find((unit) => unit.factionId === factionId);
-}
+export function App({ catalog, dataStatus, onRetryDataLoad }: AppProps) {
+  const initialSelection = useMemo(
+    () => createInitialSelection(catalog),
+    [catalog],
+  );
+  const {
+    alliances,
+    factions,
+    units,
+    abilitiesById,
+    weaponsById,
+  } = catalog;
 
-export function App() {
-  const [attackingAllianceId, setAttackingAllianceId] = useState(INITIAL_ALLIANCE_ID);
-  const [attackingFactionId, setAttackingFactionId] = useState(INITIAL_FACTION_ID);
-  const [attackingUnitId, setAttackingUnitId] = useState(INITIAL_ATTACKING_UNIT_ID);
-  const [weaponId, setWeaponId] = useState(INITIAL_WEAPON_ID);
-  const [attackingModelCount, setAttackingModelCount] = useState(5);
+  const [attackingAllianceId, setAttackingAllianceId] = useState(
+    initialSelection.allianceId,
+  );
+  const [attackingFactionId, setAttackingFactionId] = useState(
+    initialSelection.factionId,
+  );
+  const [attackingUnitId, setAttackingUnitId] = useState(
+    initialSelection.attackingUnitId,
+  );
+  const [weaponId, setWeaponId] = useState(initialSelection.weaponId);
+  const [attackingModelCount, setAttackingModelCount] = useState(
+    initialSelection.attackingModelCount,
+  );
 
-  const [defendingAllianceId, setDefendingAllianceId] = useState(INITIAL_ALLIANCE_ID);
-  const [defendingFactionId, setDefendingFactionId] = useState(INITIAL_FACTION_ID);
-  const [defendingUnitId, setDefendingUnitId] = useState(INITIAL_DEFENDING_UNIT_ID);
-  const [defendingModelCount, setDefendingModelCount] = useState(5);
+  const [defendingAllianceId, setDefendingAllianceId] = useState(
+    initialSelection.allianceId,
+  );
+  const [defendingFactionId, setDefendingFactionId] = useState(
+    initialSelection.factionId,
+  );
+  const [defendingUnitId, setDefendingUnitId] = useState(
+    initialSelection.defendingUnitId,
+  );
+  const [defendingModelCount, setDefendingModelCount] = useState(
+    initialSelection.defendingModelCount,
+  );
 
   const attackingFactions = useMemo(
-    () => FACTIONS.filter((faction) => faction.allianceId === attackingAllianceId),
-    [attackingAllianceId],
+    () => factions.filter((faction) => faction.allianceId === attackingAllianceId),
+    [attackingAllianceId, factions],
   );
   const attackingUnits = useMemo(
-    () => UNITS.filter((unit) => unit.factionId === attackingFactionId),
-    [attackingFactionId],
+    () => units.filter((unit) => unit.factionId === attackingFactionId),
+    [attackingFactionId, units],
   );
   const defendingFactions = useMemo(
-    () => FACTIONS.filter((faction) => faction.allianceId === defendingAllianceId),
-    [defendingAllianceId],
+    () => factions.filter((faction) => faction.allianceId === defendingAllianceId),
+    [defendingAllianceId, factions],
   );
   const defendingUnits = useMemo(
-    () => UNITS.filter((unit) => unit.factionId === defendingFactionId),
-    [defendingFactionId],
+    () => units.filter((unit) => unit.factionId === defendingFactionId),
+    [defendingFactionId, units],
   );
 
   const attackingUnit =
     attackingUnits.find((unit) => unit.id === attackingUnitId) ??
     attackingUnits[0] ??
-    UNITS[0];
+    units[0];
   const defendingUnit =
     defendingUnits.find((unit) => unit.id === defendingUnitId) ??
     defendingUnits[0] ??
-    UNITS[0];
-  const availableWeapons = getUnitWeapons(attackingUnit);
+    units[0];
+
+  if (!attackingUnit || !defendingUnit) {
+    throw new Error("The catalog must contain valid attacking and defending units.");
+  }
+
+  const availableWeapons = getUnitWeapons(attackingUnit, weaponsById);
   const weapon =
     availableWeapons.find((item) => item.id === weaponId) ??
     availableWeapons[0];
-
-  if (!attackingUnit || !defendingUnit || !weapon) {
-    throw new Error("The unit catalog must contain valid attacking and defending unit data.");
+  if (!weapon) {
+    throw new Error(`${attackingUnit.name} does not reference a valid weapon.`);
   }
 
   const skill =
     weapon.skillOverride ??
-    (weapon.type === "ranged" ? attackingUnit.ballisticSkill : attackingUnit.weaponSkill);
+    (weapon.type === "ranged"
+      ? attackingUnit.ballisticSkill
+      : attackingUnit.weaponSkill);
   const skillLabel = weapon.type === "ranged" ? "BS" : "WS";
   const totalAttacks = useMemo(
     () => repeatAttackCount(weapon.attacks, attackingModelCount),
     [weapon.attacks, attackingModelCount],
   );
   const abilityRules = useMemo(
-    () => resolveAbilityRules(attackingUnit, weapon, ABILITIES_BY_ID),
-    [attackingUnit, weapon],
+    () => resolveAbilityRules(attackingUnit, weapon, abilitiesById),
+    [abilitiesById, attackingUnit, weapon],
   );
 
   const input: BattleInput = {
@@ -143,8 +234,13 @@ export function App() {
     input.targetModelCount,
   ]);
 
+  const getFirstFactionForAlliance = (allianceId: string) =>
+    factions.find((faction) => faction.allianceId === allianceId);
+  const getFirstUnitForFaction = (factionId: string) =>
+    units.find((unit) => unit.factionId === factionId);
+
   const selectFirstWeaponForUnit = (unit: Unit): void => {
-    const firstWeapon = getUnitWeapons(unit)[0];
+    const firstWeapon = getUnitWeapons(unit, weaponsById)[0];
     if (!firstWeapon) {
       throw new Error(`${unit.name} does not reference a valid weapon.`);
     }
@@ -174,7 +270,7 @@ export function App() {
   };
 
   const handleAttackingUnitChange = (nextUnitId: string): void => {
-    const nextUnit = UNITS.find((unit) => unit.id === nextUnitId);
+    const nextUnit = units.find((unit) => unit.id === nextUnitId);
     if (!nextUnit) return;
 
     setAttackingUnitId(nextUnitId);
@@ -205,11 +301,16 @@ export function App() {
   };
 
   const handleDefendingUnitChange = (nextUnitId: string): void => {
-    const nextUnit = UNITS.find((unit) => unit.id === nextUnitId);
+    const nextUnit = units.find((unit) => unit.id === nextUnitId);
     if (!nextUnit) return;
-
     selectDefendingUnit(nextUnit);
   };
+
+  const statusTone =
+    dataStatus.source === "recovered" ||
+    dataStatus.source === "bundled-fallback"
+      ? "warning"
+      : "info";
 
   return (
     <main className="page-shell">
@@ -218,6 +319,29 @@ export function App() {
         <h1>Dice Servitor</h1>
       </header>
 
+      <aside
+        className={`data-status data-status--${statusTone}`}
+        aria-live="polite"
+      >
+        <div>
+          <strong>{dataStatus.notice}</strong>
+          {dataStatus.effectiveDate && (
+            <span>Effective date: {dataStatus.effectiveDate}</span>
+          )}
+        </div>
+        {dataStatus.details && (
+          <details>
+            <summary>Data loading details</summary>
+            <pre>{dataStatus.details}</pre>
+          </details>
+        )}
+        {dataStatus.source === "bundled-fallback" && onRetryDataLoad && (
+          <button type="button" onClick={onRetryDataLoad}>
+            Retry data load
+          </button>
+        )}
+      </aside>
+
       <section className="layout" aria-label="Combat probability calculator">
         <form className="panel controls" onSubmit={(event) => event.preventDefault()}>
           <h2>Attacking Unit</h2>
@@ -225,7 +349,7 @@ export function App() {
             <label>
               Alliance
               <select value={attackingAllianceId} onChange={(event) => handleAttackingAllianceChange(event.target.value)}>
-                {ALLIANCES.map((alliance) => (
+                {alliances.map((alliance) => (
                   <option key={alliance.id} value={alliance.id}>{alliance.name}</option>
                 ))}
               </select>
@@ -287,7 +411,7 @@ export function App() {
               <label>
                 Alliance
                 <select value={defendingAllianceId} onChange={(event) => handleDefendingAllianceChange(event.target.value)}>
-                  {ALLIANCES.map((alliance) => (
+                  {alliances.map((alliance) => (
                     <option key={alliance.id} value={alliance.id}>{alliance.name}</option>
                   ))}
                 </select>
