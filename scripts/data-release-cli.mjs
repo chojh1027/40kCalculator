@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { resolve } from "node:path";
+import { checkCatalogRelease } from "./data-release-check.mjs";
 import {
   buildReleaseArtifacts,
   diffCatalogs,
@@ -17,13 +18,15 @@ function usage() {
   node scripts/data-release-cli.mjs validate --catalog <catalog.json>
   node scripts/data-release-cli.mjs build --catalog <catalog.json> --data-root <data-dir> --published-date <YYYY-MM-DD>
   node scripts/data-release-cli.mjs release --catalog <catalog.json> --data-root <data-dir> --published-date <YYYY-MM-DD>
+  node scripts/data-release-cli.mjs check --catalog <catalog.json> --data-root <data-dir>
   node scripts/data-release-cli.mjs diff --from <old-catalog.json> --to <new-catalog.json>
   node scripts/data-release-cli.mjs verify --data-root <data-dir> [--latest-only]
 
 Commands:
   validate  Validate catalog structure, IDs, references, and release split ownership.
   build     Generate release chunks and manifest without changing versions.json.
-  release   Generate release files and update versions.json atomically per file.
+  release   Generate release files and update versions.json.
+  check     Compare a catalog-derived split with its committed release payloads.
   diff      Report added, removed, and changed catalog entities.
   verify    Verify committed release files, sizes, hashes, and descriptor identity.
 `;
@@ -68,7 +71,10 @@ function validateCommand(options) {
   const catalogPath = resolve(requiredOption(options, "catalog"));
   const validated = validateCatalog(readJsonFile(catalogPath));
   // Building the split performs ownership and orphan-reference validation.
-  const artifacts = buildReleaseArtifacts(validated.catalog, validated.metadata.effectiveDate);
+  const artifacts = buildReleaseArtifacts(
+    validated.catalog,
+    validated.metadata.effectiveDate,
+  );
   printJson({
     valid: true,
     catalog: catalogPath,
@@ -89,7 +95,10 @@ function buildCommand(options) {
   const catalogPath = resolve(requiredOption(options, "catalog"));
   const dataRoot = resolve(requiredOption(options, "data-root"));
   const publishedDate = requiredOption(options, "published-date");
-  const artifacts = buildReleaseArtifacts(readJsonFile(catalogPath), publishedDate);
+  const artifacts = buildReleaseArtifacts(
+    readJsonFile(catalogPath),
+    publishedDate,
+  );
   const releaseRoot = writeReleaseArtifacts(artifacts, dataRoot);
   printJson(summarizeReleaseArtifacts(artifacts, releaseRoot));
 }
@@ -113,6 +122,17 @@ function releaseCommand(options) {
   });
 }
 
+function checkCommand(options) {
+  const catalogPath = resolve(requiredOption(options, "catalog"));
+  const dataRoot = resolve(requiredOption(options, "data-root"));
+  printJson(
+    checkCatalogRelease({
+      catalog: readJsonFile(catalogPath),
+      dataRoot,
+    }),
+  );
+}
+
 function diffCommand(options) {
   const fromPath = resolve(requiredOption(options, "from"));
   const toPath = resolve(requiredOption(options, "to"));
@@ -121,7 +141,11 @@ function diffCommand(options) {
 
 function verifyCommand(options, flags) {
   const dataRoot = resolve(requiredOption(options, "data-root"));
-  printJson(verifyReleaseFiles(dataRoot, { allReleases: !flags.has("latest-only") }));
+  printJson(
+    verifyReleaseFiles(dataRoot, {
+      allReleases: !flags.has("latest-only"),
+    }),
+  );
 }
 
 function main() {
@@ -140,6 +164,9 @@ function main() {
       break;
     case "release":
       releaseCommand(options);
+      break;
+    case "check":
+      checkCommand(options);
       break;
     case "diff":
       diffCommand(options);
