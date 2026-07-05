@@ -27,11 +27,8 @@ export const RELEASE_STORE_NAMES = Object.freeze({
 
 const ACTIVE_RELEASE_SETTING_KEY = "active-release";
 
-type StoreName =
-  (typeof RELEASE_STORE_NAMES)[keyof typeof RELEASE_STORE_NAMES];
-
 interface ReleaseIndexRecord {
-  readonly gameSystem: "warhammer-40000";
+  readonly releaseId: string;
   readonly releaseIndex: ReleaseIndex;
 }
 
@@ -123,7 +120,7 @@ function activePointerFor(
 function createDatabaseSchema(database: IDBDatabase): void {
   if (!database.objectStoreNames.contains(RELEASE_STORE_NAMES.releaseIndexes)) {
     database.createObjectStore(RELEASE_STORE_NAMES.releaseIndexes, {
-      keyPath: "gameSystem",
+      keyPath: "releaseId",
     });
   }
   if (!database.objectStoreNames.contains(RELEASE_STORE_NAMES.installations)) {
@@ -238,7 +235,7 @@ export class IndexedDbReleaseStore implements ReleaseStore {
       }
 
       const releaseIndexRecord: ReleaseIndexRecord = {
-        gameSystem: installation.releaseIndex.gameSystem,
+        releaseId: installation.releaseEntry.id,
         releaseIndex: installation.releaseIndex,
       };
       releaseIndexes.put(releaseIndexRecord);
@@ -343,7 +340,7 @@ export class IndexedDbReleaseStore implements ReleaseStore {
       const [releaseIndexRecord, installationRecord, manifestRecord] =
         await Promise.all([
           requestResult(
-            releaseIndexes.get("warhammer-40000"),
+            releaseIndexes.get(releaseId),
           ) as Promise<ReleaseIndexRecord | undefined>,
           requestResult(
             installations.get(releaseId),
