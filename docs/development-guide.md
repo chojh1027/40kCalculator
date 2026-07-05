@@ -1,7 +1,7 @@
 # Dice Servitor 개발 지침 및 진행 현황
 
-- 문서 상태: v0.17
-- 기준일: 2026-07-04
+- 문서 상태: v0.18
+- 기준일: 2026-07-05
 - 대상 저장소: `chojh1027/40kCalculator`
 - 관련 문서: [프로젝트 프로포절](./proposal.md), [기술 설계서](./technical-design.md), [개발 로드맵](./roadmap.md), [데이터 릴리스 계약](./data-release-contract.md)
 
@@ -21,12 +21,14 @@
 
 ### 모듈 책임
 
-- `packages/calculator`: 순수 전투 확률 계산
-- `packages/game-data-schema`: 카탈로그·릴리스·청크 타입과 런타임 검증
-- `apps/web/src/data/catalog.ts`: 현재 번들 카탈로그 접근
-- `apps/web/src/data/network-release-loader.ts`: 정적 릴리스 다운로드·무결성 검증·catalog 합성
-- `apps/web/src/data/ability-rules.ts`: Ability 규칙 해석
-- `apps/web/src/data/result-view.ts`: 계산 결과의 UI 표시 정책
+- `packages/calculator`: 순수 전투 확률 계산과 피해 할당
+- `packages/game-data-schema`: catalog·release·chunk 타입과 런타임 검증
+- `apps/web/src/data/catalog.ts`: 현재 번들 catalog 접근
+- `apps/web/src/data/ability-rules.ts`: Unit·Weapon Ability 효과 합성
+- `apps/web/src/data/result-view.ts`: 계산 결과 표시 정책
+- `apps/web/src/data/network-release-loader.ts`: 정적 릴리스 다운로드와 무결성 검증
+- `apps/web/src/data/release-store.ts`: 저장 계약, 다운로드·설치 연결, 활성 catalog 복원
+- `apps/web/src/data/indexeddb-release-store.ts`: IndexedDB transaction 구현
 - `apps/web/src/DetailedResults.tsx`: 상세 결과 렌더링
 - `apps/web/src/App.tsx`: 사용자 입력과 화면 조합
 
@@ -35,24 +37,32 @@
 - 게임 데이터에는 임의 JavaScript를 넣지 않는다.
 - UI 컴포넌트가 Ability ID별 하드코딩을 갖지 않는다.
 - 계산 결과 표시 순서와 조건은 React 컴포넌트 밖의 순수 함수에서 결정한다.
-- 계산 엔진의 결과를 UI 편의를 위해 다시 계산하지 않는다.
-- 현재 샘플 카탈로그와 향후 공식·커뮤니티 데이터 배포를 명확히 구분한다.
-- 네트워크에서 받은 데이터는 무결성·스키마·교차 참조 검증 전까지 활성 데이터로 사용하지 않는다.
+- 계산 엔진 결과를 UI 편의를 위해 다시 계산하지 않는다.
+- 네트워크 데이터는 무결성·스키마·교차 참조 검증 전까지 활성 데이터로 사용하지 않는다.
+- 저장 데이터도 catalog 복원 시 다시 검증한다.
+
+### 릴리스 원자성
+
+- 다운로드와 검증을 IndexedDB transaction 시작 전에 완료한다.
+- 릴리스 데이터와 활성 포인터는 같은 read-write transaction에 기록한다.
+- transaction 실패 시 이전 활성 릴리스와 기존 설치 데이터를 유지한다.
+- 부분 저장 상태를 활성 catalog로 노출하지 않는다.
+- 복수 릴리스는 서로 독립된 index snapshot과 manifest를 가진다.
+- 복구는 명시적 API로 수행하고, 오류 발생만으로 활성 포인터를 자동 변경하지 않는다.
 
 ### 배포 독립성
 
 - 정적 빌드 산출물을 기본 배포 단위로 사용한다.
-- 현재 GitHub Pages는 시험 배포 환경으로 취급한다.
-- 시험 환경과 확정 운영 환경을 문서에서 구분한다.
-- 호스팅 변경이 계산 엔진, 데이터 스키마와 UI 구조에 영향을 주지 않도록 한다.
+- 현재 GitHub Pages는 시험 배포 환경이다.
 - 호스팅 사업자 전용 API를 핵심 기능의 필수 경로로 사용하지 않는다.
-- 정적 데이터 URL은 `document.baseURI`를 기준으로 계산해 하위 경로 배포를 지원한다.
+- Vite 상대 경로와 `document.baseURI`를 사용해 하위 경로 배포를 지원한다.
+- 호스팅 변경이 계산 엔진, 데이터 스키마, 저장 계약과 UI 구조에 영향을 주지 않도록 한다.
 
 ### 문서 정확성
 
 - 계획 기능을 구현 완료로 표시하지 않는다.
-- 실제 CI 버전과 현재 시험 배포 환경을 정확히 기록한다.
-- 구현 변경 시 README, roadmap, development-guide, technical-design 중 영향받는 문서를 함께 갱신한다.
+- 실제 CI 버전과 시험 배포 상태를 정확히 기록한다.
+- 구현 변경 시 영향받는 README와 docs 문서를 함께 갱신한다.
 - 제품 목적이나 완료 기준이 달라질 때 proposal을 수정한다.
 
 ---
@@ -152,7 +162,7 @@ Saves and Damage
 표시 규칙:
 
 - Normal Hits와 Critical Hits는 항상 분리한다.
-- Total Hits는 Sustained Hits 적용 후 총 명중을 의미한다.
+- Total Hits는 Sustained Hits 적용 후 총 명중이다.
 - Sustained Hits 단계는 해당 규칙이 활성일 때만 표시한다.
 - Automatic Wounds 단계는 Lethal Hits가 활성일 때만 표시한다.
 - Wound Rolls와 Total Wounds를 구분한다.
@@ -162,7 +172,7 @@ Saves and Damage
 
 ### Applied Rules
 
-결과 상단에 실제 적용 규칙을 다음 순서로 표시한다.
+표시 순서:
 
 ```text
 Hit re-roll
@@ -183,36 +193,69 @@ Wound re-roll
 
 ---
 
-## 5. 공개 계산 결과 지침
+## 5. 데이터 릴리스 지침
+
+### 정적 파일
 
 ```text
-stageDistributions.normalHits
-stageDistributions.criticalHits
-stageDistributions.sustainedHits
-stageDistributions.hits
-stageDistributions.woundRolls
-stageDistributions.automaticWounds
-stageDistributions.wounds
-stageDistributions.failedSaves
-stageDistributions.damagePerFailedSave
-stageDistributions.effectiveDamage
-stageDistributions.destroyedModels
+versions.json
+→ releases/{releaseId}/manifest.json
+→ common.json
+→ factions/{factionId}.json
 ```
+
+규칙:
+
+- 모든 경로는 traversal이 없는 상대 JSON 경로다.
+- manifest가 파일 크기와 SHA-256을 소유한다.
+- 공통 청크는 정확히 하나다.
+- 진영 청크는 최소 하나다.
+- 진영 Unit의 ModelProfile은 같은 진영 청크에 존재해야 한다.
+- 공통 WeaponProfile과 Ability 참조는 허용한다.
+
+### 네트워크 로더
+
+검증 순서:
 
 ```text
-stageBreakdown.expectedNormalHits
-stageBreakdown.expectedCriticalHits
-stageBreakdown.expectedSustainedHits
-stageBreakdown.expectedHits
-stageBreakdown.expectedWoundRolls
-stageBreakdown.expectedAutomaticWounds
-stageBreakdown.expectedWounds
-stageBreakdown.expectedFailedSaves
-stageBreakdown.expectedDamagePerFailedSave
-stageBreakdown.expectedFinalDamage
+HTTP 성공
+→ 바이트 읽기
+→ sizeBytes
+→ SHA-256
+→ UTF-8·JSON
+→ payload 스키마
+→ descriptor 일치
+→ catalog 교차 참조
 ```
 
-`hits`는 Sustained Hits까지 포함한 총 명중이다. `wounds`는 굴림 성공 상처와 자동 상처의 합이며 내성 굴림 전 상태다.
+크기 또는 해시 오류는 JSON 파싱 전에 거부한다.
+
+### 저장 설치
+
+```text
+검증된 네트워크 릴리스
+→ 응답 원본 바이트 capture
+→ ReleaseInstallation 검증
+→ IndexedDB read-write transaction
+→ 데이터와 활성 포인터 저장
+→ commit 후 새 릴리스 활성
+```
+
+규칙:
+
+- transaction 시작 전에 전체 네트워크 검증을 완료한다.
+- 활성 포인터는 같은 transaction에서 기록한다.
+- 동일 릴리스 재설치 시 기존 해당 릴리스 청크를 교체한다.
+- 새 릴리스가 기존 릴리스의 index snapshot을 덮어쓰지 않는다.
+- 저장 청크는 활성 catalog 복원 시 SHA-256을 다시 확인한다.
+
+### 복구
+
+- 새 릴리스 활성화 시 기존 활성 릴리스 ID를 기록한다.
+- `recoverPreviousRelease`는 설치된 이전 릴리스만 활성화한다.
+- 미설치 릴리스 활성화는 오류다.
+- 손상된 활성 데이터는 자동으로 다른 버전으로 바꾸지 않는다.
+- bootstrap 계층이 복구 또는 네트워크 재설치를 선택한다.
 
 ---
 
@@ -229,19 +272,18 @@ stageBreakdown.expectedFinalDamage
 - Sustained/Lethal 동시 적용 경로
 - non-spill 피해 할당
 
-### 데이터와 릴리스
+### catalog와 청크
 
 - 엔티티 ID 중복 거부
 - 교차 참조 무결성
 - 수치 범위 검증
 - 미지원 필드 거부
 - 모든 Ability 효과 종류와 범위
-- 효과 없는 기존 Ability 호환
 - 실제 `catalog.json` 로딩 회귀
-- release index와 manifest 계약 검증
-- 실제 정적 청크의 파일 크기와 SHA-256 검증
-- 공통·진영 청크 payload 검증
-- 전체 청크 합성과 기존 카탈로그 동등성
+- 전체 청크와 기존 catalog 의미적 동등성
+
+### 네트워크 릴리스
+
 - 최신·지정 릴리스 선택
 - 선택 진영만 다운로드
 - HTTP·JSON·스키마 오류 분류
@@ -249,19 +291,20 @@ stageBreakdown.expectedFinalDamage
 - descriptor와 payload 불일치 거부
 - 최종 catalog 합성 실패 시 결과 미반환
 
-### Ability 합성
+### 저장과 활성화
 
-- Unit·Weapon 효과 수집 순서
-- 중복 Ability 제거
-- 재굴림 우선순위
-- Critical Hit 임계값 우선순위
-- Lethal Hits 합성
-- Sustained Hits 동일값과 충돌
-- 누락 Ability 오류
+- 정상 다운로드·설치·활성화·catalog 복원
+- transaction 강제 실패 시 이전 활성 릴리스 유지
+- 실패한 릴리스의 부분 데이터 미보관
+- 복수 릴리스 보관
+- 과거 릴리스 명시적 활성화
+- 이전 활성 릴리스 복구
+- 저장 바이트 손상 검출
+- 미설치 릴리스와 복구 불가 오류
+- IndexedDB 미지원 환경 오류
+- 실제 브라우저 IndexedDB smoke test는 bootstrap 연결 단계에서 추가
 
 ### 상세 결과 표시
-
-`apps/web/src/data/result-view.test.ts`:
 
 - 기본 단계 순서
 - Sustained Hits 조건부 표시
@@ -276,31 +319,33 @@ stageBreakdown.expectedFinalDamage
 npm run check
 ```
 
-이 명령에는 모든 워크스페이스 타입 검사, 테스트, 정적 릴리스 무결성 검사와 웹 프로덕션 빌드가 포함된다.
+포함 항목:
+
+- 모든 workspace 타입 검사
+- 전체 테스트
+- 정적 릴리스 파일 무결성 검사
+- 웹 프로덕션 빌드
 
 ---
 
-## 7. CI와 배포 지침
+## 7. CI와 시험 배포
 
-### 로컬 지원 버전
+### 지원 Node.js
 
 ```text
 Node.js ^20.19.0 또는 >=22.12.0
 ```
 
-즉 Node.js 20 계열에서는 20.19 이상을 사용하고, 22 계열 이상에서는 22.12 이상을 사용한다. Node.js 21 계열은 지원 범위에 포함하지 않는다.
-
 ### GitHub Actions CI
-
-CI는 Node.js 24를 사용한다.
 
 ```text
 PR 또는 main push
+→ Node.js 24
 → npm ci
 → npm run check
 ```
 
-### 현재 GitHub Pages 시험 배포
+### GitHub Pages 시험 배포
 
 ```text
 main push 또는 workflow_dispatch
@@ -311,20 +356,13 @@ main push 또는 workflow_dispatch
 → GitHub Pages deploy
 ```
 
-- 배포 대상은 `apps/web/dist`다.
-- Vite는 상대 경로 배포를 위해 `base: "./"`를 사용한다.
-- 네트워크 데이터 기본 경로는 현재 문서의 `data/` 하위 경로다.
-- GitHub Pages는 현재 시험 환경이다.
-- 시험 후 유지 또는 다른 정적 호스팅으로 전환한다.
-- 플랫폼 전환 시에도 동일한 빌드와 검사 명령을 유지한다.
-- lockfile 변경 없이 의존성 선언만 변경하지 않는다.
-
 시험 항목:
 
 - 첫 접근과 직접 URL 접근
 - 새로고침과 상대 경로
 - 모바일 화면과 입력 동작
 - 정적 데이터 경로와 청크 다운로드
+- IndexedDB 생성·재사용·버전 전환
 - 캐시 갱신
 - 배포 실패 시 복구
 - 성능과 운영 편의성
@@ -352,14 +390,14 @@ main push 또는 workflow_dispatch
 |---|---:|---|
 | 정규화 스키마 | ✅ | Unit, Model, Weapon, Ability |
 | AbilityEffect | ✅ | 선언형 union |
-| 효과 런타임 검증 | ✅ | 종류·필드·범위 |
 | Unit·Weapon 효과 합성 | ✅ | 별도 순수 함수 |
-| 외부 JSON | ✅ | 단일 샘플 카탈로그 |
 | 릴리스 index·manifest | ✅ | 정적 파일 계약과 검증 |
 | 청크 payload·assembler | ✅ | 공통·진영 검증과 선택 합성 |
 | 네트워크 로더 | ✅ | Fetch, Web Crypto, 오류 분류 |
-| IndexedDB 저장 | ⬜ | 다음 단계 |
-| 활성 릴리스 전환 | ⬜ | 원자적 포인터 교체 예정 |
+| IndexedDB 저장 | ✅ | 5개 object store, schema v1 |
+| 원자적 활성 전환 | ✅ | 데이터와 포인터 단일 transaction |
+| 복수 버전·복구 | ✅ | 활성화와 이전 버전 복구 API |
+| UI catalog provider | ⬜ | 다음 단계 |
 
 ### UI
 
@@ -370,8 +408,8 @@ main push 또는 workflow_dispatch
 | 상세 명중 결과 | ✅ | 일반·Critical·Sustained·총 명중 |
 | 상세 상처 결과 | ✅ | 굴림 수·자동 상처·총 상처 |
 | 확률분포 접기 카드 | ✅ | 단계별 전체 분포 |
-| 활성 릴리스 catalog 사용 | ⬜ | 현재 번들 `catalog.json` 사용 |
-| 전체 최종 상태 분포 UI | ⬜ | 후속 단계 |
+| 활성 IndexedDB catalog 사용 | ⬜ | 현재 번들 `catalog.json` 사용 |
+| 데이터 로딩·복구 UI | ⬜ | bootstrap 단계 |
 
 ### 운영
 
@@ -381,25 +419,20 @@ main push 또는 workflow_dispatch
 | 정적 배포 자동화 | ✅ | GitHub Pages workflow |
 | 호스팅 플랫폼 확정 | 🟡 | Pages 시험 후 결정 |
 | 공식 전체 데이터 | ⬜ | 권리·수집 방식 검토 필요 |
-| 로컬 데이터 캐시 | ⬜ | IndexedDB 예정 |
+| 브라우저 저장 smoke test | ⬜ | bootstrap 연결 후 수행 |
 
 ---
 
 ## 9. 다음 개발 우선순위
 
-1. IndexedDB 데이터베이스와 object store 계약
-2. 검증된 릴리스의 임시 설치
-3. 전체 저장 성공 후 활성 릴리스 포인터 교체
-4. 설치 실패 시 기존 활성 버전 유지
-5. 마지막 정상 버전 복구
-6. 복수 릴리스 보관과 과거 버전 선택
-7. UI를 활성 릴리스 catalog 조회 경로로 전환
-
-병행 검증:
-
-- GitHub Pages 시험 배포 테스트
-- 정적 데이터 파일과 청크의 캐시 갱신 동작
-- 시험 결과에 따른 호스팅 유지·전환 결정
+1. 앱 시작 시 IndexedDB store 열기
+2. 활성 catalog 우선 로드
+3. 저장소가 비어 있으면 최신 릴리스 설치
+4. 저장 데이터 손상 시 이전 릴리스 복구 또는 재설치
+5. loading·error·recovery UI
+6. `catalog.ts`를 비동기 provider로 전환
+7. App 데이터 의존성 주입
+8. GitHub Pages 실제 브라우저 smoke test
 
 ---
 
@@ -413,6 +446,7 @@ main push 또는 workflow_dispatch
 - [ ] 정상·경계·오류 테스트를 추가했다.
 - [ ] 기존 미적용 입력의 호환성을 검증했다.
 - [ ] 모든 공개 분포 정규화를 검증했다.
+- [ ] 저장·활성화 실패 시 기존 상태 보존을 검증했다.
 - [ ] 관련 문서를 실제 구현 상태로 갱신했다.
 - [ ] 시험 환경과 확정 운영 환경을 구분했다.
 - [ ] `npm ci` 이후 `npm run check`를 통과했다.
@@ -422,10 +456,10 @@ main push 또는 workflow_dispatch
 ## 11. 문서 갱신 규칙
 
 - 구현 상태와 다음 순서: `roadmap.md`
-- 릴리스 파일 계약: `data-release-contract.md`
+- 릴리스 파일·저장 계약: `data-release-contract.md`
 - 개발 원칙과 테스트 기준: `development-guide.md`
 - 구조와 기술 결정: `technical-design.md`
 - 제품 목적과 범위: `proposal.md`
-- 실행·사용·현재 시험 배포 방법: `README.md`
+- 실행·사용·시험 배포 방법: `README.md`
 
 계획만 존재하는 기능을 완료로 표시하지 않는다.
