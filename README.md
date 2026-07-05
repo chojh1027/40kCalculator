@@ -18,11 +18,14 @@ Dice Servitor는 워해머 40,000 전투 절차를 실제 이산 확률분포로
 - Web Crypto SHA-256과 파일 크기 검증
 - IndexedDB v1 릴리스 저장소
 - 원자적 릴리스 설치와 활성 포인터 교체
-- 복수 릴리스 보관, 과거 버전 활성화와 이전 버전 복구
-- 저장 청크 재검증과 활성 catalog 복원 API
+- 복수 릴리스 보관과 이전 버전 복구
+- 앱 시작 시 활성 IndexedDB catalog 우선 로드
+- 빈 저장소의 최신 릴리스 자동 설치
+- 손상 데이터의 이전 버전 복구와 네트워크 재설치
+- loading·recovery·fallback·retry UI
 - `npm ci` 기반 CI와 GitHub Pages 시험 배포
 
-현재 React 화면은 아직 번들 `catalog.json`을 사용합니다. 다음 단계는 앱 시작 시 IndexedDB의 활성 catalog를 우선 읽고, 저장소가 비어 있으면 최신 릴리스를 설치하는 bootstrap 계층입니다.
+정상 경로에서는 검증된 IndexedDB catalog를 사용합니다. 저장소를 열 수 없거나 복구와 재설치가 모두 실패한 경우에만 번들 샘플 catalog를 최종 fallback으로 사용합니다.
 
 ## 현재 샘플 데이터
 
@@ -59,6 +62,22 @@ Saves and Damage
 
 `Automatic Wounds`는 상처 굴림을 건너뛴 상처 수이며, 내성 굴림을 건너뛴 피해를 뜻하지 않습니다.
 
+## 데이터 bootstrap
+
+앱 시작 순서:
+
+```text
+IndexedDB 열기
+→ 활성 릴리스 catalog 검증
+→ 정상이라면 즉시 사용
+→ 활성 데이터가 없으면 최신 릴리스 설치
+→ 활성 데이터가 손상되면 이전 릴리스 복구
+→ 복구 실패 시 최신 릴리스 재설치
+→ 모두 실패하면 번들 샘플 catalog 사용
+```
+
+화면에는 현재 데이터 출처와 적용일을 표시합니다. 복구 또는 fallback 상태에서는 경고를 표시하고, fallback 상태에서는 데이터 로드를 다시 시도할 수 있습니다.
+
 ## 데이터 릴리스
 
 ```text
@@ -88,6 +107,8 @@ HTTP 성공
 ```ts
 loadGameDataRelease(options)
 loadBrowserGameDataRelease(options)
+bootstrapGameData(dependencies)
+bootstrapBrowserGameData()
 ```
 
 ## IndexedDB 저장
@@ -156,13 +177,20 @@ main push 또는 workflow_dispatch
 → GitHub Pages 배포
 ```
 
+배포 후 확인할 항목:
+
+- 첫 접근에서 릴리스 설치
+- 새로고침에서 IndexedDB catalog 재사용
+- 저장소 삭제 후 재설치
+- 모바일 브라우저 IndexedDB 동작
+
 ## 아직 미지원
 
 - Critical Wound와 Devastating Wounds
 - Mortal Wounds 별도 피해 경로
 - 피해 감소와 Feel No Pain
 - 복수 공격 그룹 순차 처리
-- 활성 IndexedDB catalog의 UI bootstrap 연결
+- 데이터 릴리스 자동 생성 CLI
 - 전체 게임 데이터
 
 ## 프로젝트 문서
